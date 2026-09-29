@@ -64,7 +64,7 @@ const dictionary = [
 function Logo() {
   return (
     <button className="brand-wrap" type="button" aria-label="Складно">
-      <div className="logo-mark"><span /><span /></div>
+      <img className="brand-logo-image" src="/assets/skladno-logo.png" alt="" />
       <div>
         <div className="brand">Складно</div>
         <div className="brand-sub">Английский, который<br />складывается в жизнь</div>
