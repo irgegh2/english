@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity, ArrowRight, AudioLines, Bell, BookOpen, Bookmark, CalendarDays,
@@ -128,11 +128,11 @@ function LessonCard({ lesson, onProgress }) {
   );
 }
 
-function Sidebar({ section, activeItem, setActiveItem }) {
+function Sidebar({ section, activeItem, setActiveItem, switching }) {
   const config = sectionConfig[section];
   return (
-    <aside className="sidebar">
-      <div className="sidebar-inner">
+    <aside className={`sidebar ${switching ? 'sidebar-switching' : ''}`}>
+      <div className="sidebar-inner sidebar-enter" key={section}>
         <div className="sidebar-context">
           <span>{config.label}</span>
           <strong>{section === 'learn' ? 'Курс British English' : section === 'community' ? 'Учимся вместе' : 'Твоя панель'}</strong>
@@ -141,6 +141,7 @@ function Sidebar({ section, activeItem, setActiveItem }) {
           {config.items.map(([Icon, label], index) => (
             <button
               key={label}
+              style={{ '--nav-order': index }}
               className={activeItem === label || (!activeItem && index === (section === 'learn' ? 1 : 0)) ? 'active' : ''}
               onClick={() => setActiveItem(label)}
             >
@@ -186,7 +187,7 @@ function Sidebar({ section, activeItem, setActiveItem }) {
   );
 }
 
-function Topbar({ profile, section, setSection }) {
+function Topbar({ profile, section, onSectionChange }) {
   const [langOpen, setLangOpen] = useState(false);
   return (
     <header className="topbar">
@@ -195,7 +196,7 @@ function Topbar({ profile, section, setSection }) {
         {Object.entries(sectionConfig).map(([key, item]) => {
           const Icon = item.icon;
           return (
-            <button key={key} className={section === key ? 'active' : ''} onClick={() => setSection(key)}>
+            <button key={key} className={section === key ? 'active' : ''} onClick={() => onSectionChange(key)}>
               <Icon size={17} />{item.label}
             </button>
           );
@@ -341,7 +342,10 @@ function App() {
     lessons: fallbackLessons,
   });
   const [section, setSection] = useState('learn');
+  const [renderedSection, setRenderedSection] = useState('learn');
+  const [switching, setSwitching] = useState(false);
   const [activeItem, setActiveItem] = useState('Все модули');
+  const switchTimer = useRef(null);
 
   useEffect(() => {
     fetch('/api/dashboard')
@@ -350,10 +354,26 @@ function App() {
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
-    const defaults = { home: 'Обзор', learn: 'Все модули', community: 'Лента' };
-    setActiveItem(defaults[section]);
-  }, [section]);
+  useEffect(() => () => {
+    if (switchTimer.current) window.clearTimeout(switchTimer.current);
+  }, []);
+
+  const navigateSection = next => {
+    if (next === section) return;
+
+    setSection(next);
+    setSwitching(true);
+
+    if (switchTimer.current) window.clearTimeout(switchTimer.current);
+    switchTimer.current = window.setTimeout(() => {
+      const defaults = { home: 'Обзор', learn: 'Все модули', community: 'Лента' };
+      setRenderedSection(next);
+      setActiveItem(defaults[next]);
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setSwitching(false));
+      });
+    }, 115);
+  };
 
   const updateProgress = (id, progress) => setModule(current => ({
     ...current,
@@ -363,17 +383,21 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Topbar profile={profile} section={section} setSection={setSection} />
+      <Topbar profile={profile} section={section} onSectionChange={navigateSection} />
       <div className="layout">
-        <Sidebar section={section} activeItem={activeItem} setActiveItem={setActiveItem} />
-        {section === 'learn' ? (
-          <main className="main-content">
-            <Hero module={module} />
-            <section className="lessons-grid">
-              {module.lessons.map(lesson => <LessonCard key={lesson.id} lesson={lesson} onProgress={updateProgress} />)}
-            </section>
-          </main>
-        ) : section === 'home' ? <HomePage profile={profile} /> : <CommunityPage />}
+        <Sidebar section={renderedSection} activeItem={activeItem} setActiveItem={setActiveItem} switching={switching} />
+        <div className={`center-slot ${switching ? 'center-switching' : ''}`}>
+          <div className="center-page center-enter" key={renderedSection}>
+            {renderedSection === 'learn' ? (
+              <main className="main-content">
+                <Hero module={module} />
+                <section className="lessons-grid">
+                  {module.lessons.map(lesson => <LessonCard key={lesson.id} lesson={lesson} onProgress={updateProgress} />)}
+                </section>
+              </main>
+            ) : renderedSection === 'home' ? <HomePage profile={profile} /> : <CommunityPage />}
+          </div>
+        </div>
         <RightRail />
       </div>
     </div>
