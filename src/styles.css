@@ -231,7 +231,6 @@ button:focus-visible,[tabindex="0"]:focus-visible{outline:3px solid rgba(38,198,
 /* ===== Calm polish pass ===== */
 :root{font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 body{font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-*{animation-duration:.16s!important}
 svg{stroke-width:1.8}
 
 /* Left navigation: smaller, aligned, and the recent block stays near the menu */
@@ -381,4 +380,141 @@ svg{stroke-width:1.8}
 
 @media(max-width:1280px){
   .continue-block{display:none!important}
+}
+
+
+/* ===== Section switching motion =====
+   Only the left navigation and center page animate.
+   The right rail intentionally stays visually fixed. */
+.center-slot{
+  min-width:0;
+  position:relative;
+  transition:opacity 115ms ease,transform 115ms ease;
+}
+.center-slot.center-switching{
+  opacity:.28;
+  transform:translateY(4px);
+}
+.center-page{
+  min-width:0;
+}
+.center-enter{
+  animation:center-page-in 260ms cubic-bezier(.2,.78,.2,1) both;
+}
+@keyframes center-page-in{
+  from{
+    opacity:0;
+    transform:translateY(9px);
+    filter:blur(1.4px);
+  }
+  to{
+    opacity:1;
+    transform:translateY(0);
+    filter:blur(0);
+  }
+}
+
+.sidebar{
+  transition:opacity 115ms ease,transform 115ms ease;
+}
+.sidebar.sidebar-switching{
+  opacity:.28;
+  transform:translateX(-4px);
+}
+.sidebar-enter{
+  animation:sidebar-panel-in 280ms cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes sidebar-panel-in{
+  from{
+    opacity:0;
+    transform:translateX(-9px);
+  }
+  to{
+    opacity:1;
+    transform:translateX(0);
+  }
+}
+.sidebar-enter .side-nav button{
+  opacity:0;
+  animation:sidebar-item-in 220ms cubic-bezier(.2,.8,.2,1) forwards;
+  animation-delay:calc(35ms + (var(--nav-order) * 24ms));
+}
+@keyframes sidebar-item-in{
+  from{
+    opacity:0;
+    transform:translateX(-6px);
+  }
+  to{
+    opacity:1;
+    transform:translateX(0);
+  }
+}
+.sidebar-enter .recent-card,
+.sidebar-enter .sidebar-mini-card{
+  opacity:0;
+  animation:sidebar-extra-in 230ms ease forwards;
+  animation-delay:150ms;
+}
+@keyframes sidebar-extra-in{
+  from{opacity:0;transform:translateY(5px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+/* A little life on the active top tab, without moving the whole header. */
+.top-nav button.active svg{
+  animation:top-tab-icon 220ms cubic-bezier(.2,.8,.2,1);
+}
+@keyframes top-tab-icon{
+  0%{transform:scale(.88);opacity:.65}
+  100%{transform:scale(1);opacity:1}
+}
+.top-nav button.active:after{
+  animation:top-tab-line 230ms cubic-bezier(.2,.8,.2,1);
+  transform-origin:center;
+}
+@keyframes top-tab-line{
+  from{transform:scaleX(.38);opacity:.35}
+  to{transform:scaleX(1);opacity:1}
+}
+
+/* Center-page internals arrive together instead of every card flying separately. */
+.center-enter .hero,
+.center-enter .alt-hero{
+  animation:section-lead-in 280ms cubic-bezier(.2,.8,.2,1) both;
+}
+.center-enter .lessons-grid,
+.center-enter .quick-grid,
+.center-enter .feed-card{
+  animation:section-body-in 300ms cubic-bezier(.2,.8,.2,1) 45ms both;
+}
+@keyframes section-lead-in{
+  from{opacity:.45;transform:translateY(5px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes section-body-in{
+  from{opacity:0;transform:translateY(7px)}
+  to{opacity:1;transform:translateY(0)}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .center-slot,
+  .sidebar,
+  .center-enter,
+  .sidebar-enter,
+  .sidebar-enter .side-nav button,
+  .sidebar-enter .recent-card,
+  .sidebar-enter .sidebar-mini-card,
+  .top-nav button.active svg,
+  .top-nav button.active:after,
+  .center-enter .hero,
+  .center-enter .alt-hero,
+  .center-enter .lessons-grid,
+  .center-enter .quick-grid,
+  .center-enter .feed-card{
+    animation:none!important;
+    transition:none!important;
+    transform:none!important;
+    filter:none!important;
+    opacity:1!important;
+  }
 }
