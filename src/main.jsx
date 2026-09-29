@@ -212,7 +212,7 @@ function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect }
             <button
               key={label}
               style={{ '--nav-order': index }}
-              className={activeItem === label || (!activeItem && index === (section === 'learn' ? 1 : 0)) ? 'active' : ''}
+              className={`${activeItem === label || (!activeItem && index === (section === 'learn' ? 1 : 0)) ? 'active' : ''} ${subtitle ? 'has-subtitle' : ''}`.trim()}
               onClick={() => {
                 setActiveItem(label);
                 onItemSelect?.(label);
