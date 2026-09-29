@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Profile {
+  id               Int      @id @default(1)
+  name             String   @default("Анна")
+  streak           Int      @default(12)
+  overallProgress  Int      @default(62)
+  completedModules Int      @default(6)
+  totalModules     Int      @default(35)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model CourseModule {
+  id          Int      @id @default(autoincrement())
+  position    Int      @unique
+  title       String
+  shortTitle  String
+  description String
+  level       String   @default("A1")
+  lessons     Lesson[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Lesson {
+  id           Int          @id @default(autoincrement())
+  moduleId     Int
+  module       CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  position     Int
+  title        String
+  tagPrimary   String
+  tagSecondary String
+  description  String
+  progress     Int          @default(0)
+  duration     Int
+  imageKey     String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([moduleId, position])
+}
