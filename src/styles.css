@@ -518,3 +518,14 @@ svg{stroke-width:1.8}
     opacity:1!important;
   }
 }
+
+
+/* Generated brand mark */
+.brand-logo-image{
+  width:46px;
+  height:46px;
+  display:block;
+  object-fit:contain;
+  flex:0 0 auto;
+}
+.brand-wrap:hover .brand-logo-image{transform:none}
