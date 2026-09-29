@@ -328,7 +328,7 @@ function LearningBreadcrumbs({ moduleData, block, onModules, onModule }) {
   return (
     <div className="learning-breadcrumbs">
       <button onClick={onModules}>Все модули</button>
-      {moduleData && <><span>/</span><button onClick={onModule}>Модуль {moduleData.position}</button></>}
+      {moduleData && <><span>/</span>{block ? <button onClick={onModule}>Модуль {moduleData.position}</button> : <strong>Модуль {moduleData.position}</strong>}</>}
       {block && <><span>/</span><strong>Блок {block.position}</strong></>}
     </div>
   );
