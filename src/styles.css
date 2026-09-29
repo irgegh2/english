@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 :root{
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color:#0d2b3b;
@@ -225,4 +225,160 @@ button:focus-visible,[tabindex="0"]:focus-visible{outline:3px solid rgba(38,198,
   .right-rail{display:none}
   .continue-block{grid-template-columns:52px 1fr auto}
   .continue-stats{display:none}
+}
+
+
+/* ===== Calm polish pass ===== */
+:root{font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{font-family:Manrope,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+*{animation-duration:.16s!important}
+svg{stroke-width:1.8}
+
+/* Left navigation: smaller, aligned, and the recent block stays near the menu */
+.sidebar-context{display:none}
+.sidebar{padding:2px 0 0}
+.sidebar-inner{justify-content:flex-start}
+.side-nav{gap:3px}
+.side-nav button{
+  min-height:36px;
+  height:36px;
+  padding:0 10px;
+  border-radius:9px;
+  grid-template-columns:22px minmax(0,1fr) 12px;
+  gap:8px;
+  font-size:12px;
+  line-height:1;
+  transition:background-color .12s ease,color .12s ease,border-color .12s ease;
+}
+.side-nav button svg:first-child{width:16px;height:16px}
+.side-nav button:hover{
+  transform:none;
+  background:#f5faf8;
+  color:#176d67;
+}
+.side-nav button.active{
+  background:#ddf7f2;
+  color:#078d81;
+  font-weight:700;
+  box-shadow:inset 0 0 0 1px rgba(35,188,170,.06);
+}
+.side-arrow{display:none}
+.recent-card{
+  margin-top:15px;
+  padding:11px 10px 7px;
+  border-radius:13px;
+  background:rgba(255,255,255,.72);
+}
+.recent-title-row{padding:0 2px 5px}
+.recent-title-row h4{font-size:11.5px}
+.recent-row{
+  min-height:47px;
+  padding:6px 2px;
+  grid-template-columns:29px minmax(0,1fr) 12px;
+  gap:7px;
+  border-radius:8px;
+  transition:background-color .12s ease;
+}
+.recent-row:hover{padding-left:2px;background:#f5faf8}
+.recent-icon{width:28px;height:28px;border-radius:8px}
+.recent-row strong{font-size:9.8px;line-height:1.2}
+.recent-row span{font-size:8.5px;margin-top:2px}
+.sidebar-mini-card{margin-top:16px}
+
+/* Module header: closer to the original concept */
+.hero{
+  height:266px;
+  min-height:266px;
+  border-radius:17px;
+  border:1px solid #e6eeeb;
+  background:#edf8f7;
+  box-shadow:0 8px 20px rgba(46,83,84,.035);
+}
+.hero-copy{
+  width:58%;
+  padding:25px 25px 18px;
+}
+.hero-pill{
+  padding:6px 10px;
+  font-size:10px;
+  background:#dff1ef;
+  color:#486f73;
+}
+.hero h1{
+  margin:12px 0 8px;
+  font-size:38px;
+  line-height:1.01;
+  letter-spacing:-1.45px;
+  font-weight:800;
+}
+.hero p{
+  max-width:520px;
+  font-size:12px;
+  line-height:1.45;
+  color:#627886;
+}
+.module-progress-label{
+  margin-top:14px;
+  font-size:10px;
+}
+.module-progress-label b{font-size:10px}
+.module-progress{height:7px}
+.module-progress i{box-shadow:none}
+.hero-art{
+  right:0;
+  top:0;
+  width:50.5%;
+  height:100%;
+}
+.hero-art img{
+  transform:none;
+  filter:none;
+  object-fit:cover;
+  object-position:center center;
+}
+.hero:after{
+  left:46%;
+  width:110px;
+  background:linear-gradient(90deg,#edf8f7 4%,rgba(237,248,247,.72) 42%,rgba(237,248,247,0));
+}
+
+/* Cards: clearer borders, subtler hover, no floating/scaling */
+.lessons-grid{margin-top:12px;gap:12px}
+.lesson-card{
+  border-radius:14px;
+  border-color:#e2e8e5;
+  box-shadow:0 3px 11px rgba(28,58,66,.025);
+  transition:border-color .12s ease,box-shadow .12s ease;
+}
+.lesson-card:hover,.lesson-card:focus-visible{
+  transform:none;
+  border-color:#cfe1dc;
+  box-shadow:0 7px 18px rgba(28,79,78,.065);
+}
+.lesson-image{transition:none}
+.lesson-card:hover .lesson-image{transform:none;filter:none}
+.lesson-body h3{font-size:16px;font-weight:800;letter-spacing:-.3px}
+.lesson-body p{font-size:11px;color:#657986}
+.tag{font-size:9.5px;font-weight:700;padding:4px 10px}
+.lesson-btn{transition:background-color .12s ease,border-color .12s ease;color .12s ease}
+.lesson-btn:hover{transform:none}
+.progress-fill{transition:width .22s ease!important}
+
+/* Right column and header: interactive, but calm */
+.interactive-card{transition:border-color .12s ease,box-shadow .12s ease}
+.interactive-card:hover{transform:none;box-shadow:0 6px 18px rgba(29,75,76,.055);border-color:#d9e5e1}
+.pronunciation:hover .mic-art{transform:none}
+.mic-art{transition:none}
+.pron-btn:hover{transform:none}
+.streak:hover,.icon-btn:hover,.language:hover,.brand-wrap:hover .logo-mark{transform:none}
+.top-nav button{transition:color .12s ease,background-color .12s ease}
+.topbar{box-shadow:0 2px 12px rgba(25,65,71,.025)}
+.widget{border-radius:14px}
+.widget-head h3{font-size:14px;font-weight:800}
+
+/* Remove styling for the rejected continuation panel completely */
+.continue-block,.section-heading{display:none!important}
+
+@media(max-width:1280px){
+  .continue-block{display:none!important}
 }
