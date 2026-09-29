@@ -12,9 +12,11 @@ model Profile {
   name             String   @default("Анна")
   streak           Int      @default(12)
   overallProgress  Int      @default(62)
-  completedModules Int      @default(6)
-  totalModules     Int      @default(35)
-  createdAt        DateTime @default(now())
+  completedModules     Int      @default(6)
+  totalModules         Int      @default(35)
+  currentModulePosition Int     @default(7)
+  currentBlockPosition  Int     @default(1)
+  createdAt            DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
 
@@ -25,15 +27,34 @@ model CourseModule {
   shortTitle  String
   description String
   level       String   @default("A1")
+  progress    Int      @default(0)
+  blocks      CourseBlock[]
   lessons     Lesson[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model CourseBlock {
+  id         Int          @id @default(autoincrement())
+  moduleId   Int
+  module     CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  position   Int
+  title      String
+  imageKey   String       @default("lesson-1.webp")
+  progress   Int          @default(0)
+  lessons    Lesson[]
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@unique([moduleId, position])
 }
 
 model Lesson {
   id           Int          @id @default(autoincrement())
   moduleId     Int
   module       CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  blockId      Int?
+  block        CourseBlock? @relation(fields: [blockId], references: [id], onDelete: Cascade)
   position     Int
   title        String
   tagPrimary   String
