@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity, ArrowRight, AudioLines, Bell, BookOpen, Bookmark, CalendarDays,
-  Check, ChevronDown, ChevronLeft, CircleUserRound, Clock3, Compass, Flame,
+  Check, ChevronDown, ChevronLeft, CircleAlert, CircleUserRound, Clock3, Compass, Flame,
   GraduationCap, Grid2X2, Headphones, Heart, Home, Layers3, LibraryBig,
   MessageCircle, Mic2, Play, RotateCcw, Search, Settings2, Share2, Sparkles,
   Star, Trophy, UserRound, Users, Volume2, WandSparkles, Zap
@@ -32,9 +32,14 @@ const sectionConfig = {
     label: 'Обучение',
     icon: BookOpen,
     items: [
-      [LibraryBig, 'Мой план'], [Grid2X2, 'Все модули'], [MessageCircle, 'Разговорная практика'],
-      [Settings2, 'Грамматика'], [Headphones, 'Аудио и восприятие'], [BookOpen, 'Словарь'],
-      [Bookmark, 'Жизненные ситуации'], [GraduationCap, 'Экзамены'], [Star, 'Избранное'],
+      [Play, 'Продолжить обучение', 'Модуль 7 · Блок 1'],
+      [Grid2X2, 'Все модули'],
+      [RotateCcw, 'Повторение'],
+      [CircleAlert, 'Мои ошибки'],
+      [BookOpen, 'Словарь'],
+      [Sparkles, 'Погружение'],
+      [GraduationCap, 'Экзамены'],
+      [Star, 'Избранное'],
     ],
   },
   community: {
@@ -203,7 +208,7 @@ function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect }
           <strong>{section === 'learn' ? 'Курс British English' : section === 'community' ? 'Учимся вместе' : 'Твоя панель'}</strong>
         </div>
         <nav className="side-nav">
-          {config.items.map(([Icon, label], index) => (
+          {config.items.map(([Icon, label, subtitle], index) => (
             <button
               key={label}
               style={{ '--nav-order': index }}
@@ -214,7 +219,10 @@ function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect }
               }}
             >
               <Icon size={18} />
-              <span>{label}</span>
+              <span className="side-label">
+                <span>{label}</span>
+                {subtitle && <small>{subtitle}</small>}
+              </span>
               <ArrowRight size={14} className="side-arrow" />
             </button>
           ))}
@@ -586,7 +594,22 @@ function App() {
   };
 
   const handleSidebarItem = label => {
-    if (renderedSection === 'learn' && label === 'Все модули') openModules();
+    if (renderedSection !== 'learn') return;
+
+    if (label === 'Все модули') {
+      openModules();
+      return;
+    }
+
+    if (label === 'Продолжить обучение') {
+      const currentModule = courseModules.find(item => item.position === 7);
+      const currentBlock = module7Blocks[0];
+      setSelectedModule(currentModule);
+      setSelectedBlock(currentBlock);
+      setLearningView('lessons');
+      setActiveItem('Продолжить обучение');
+      window.history.replaceState({}, '', '/learn/module-7/block-1');
+    }
   };
 
   const updateProgress = (id, progress) => setModule(current => ({
