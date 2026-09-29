@@ -918,3 +918,35 @@ svg{stroke-width:1.8}
   .module-row{grid-template-columns:54px minmax(0,1fr) 150px 32px}
   .block-card{grid-template-columns:125px minmax(0,1fr) 26px}
 }
+
+
+/* ===== Final learning sidebar structure ===== */
+.side-nav button.has-subtitle{
+  min-height:46px;
+  height:46px;
+  align-items:center;
+}
+.side-label{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:2px;
+}
+.side-label>span{
+  display:block;
+  width:100%;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.side-label small{
+  display:block;
+  color:#8a9a9f;
+  font-size:8px;
+  line-height:1.1;
+  font-weight:600;
+  white-space:nowrap;
+}
+.side-nav button.active .side-label small{color:#55a99f}
