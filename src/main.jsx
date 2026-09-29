@@ -241,27 +241,7 @@ function Hero({ module }) {
         <div className="module-progress-label"><span>Прогресс модуля</span><b>{touched} из 6 уроков</b></div>
         <div className="module-progress"><i style={{ width: `${moduleProgress}%` }} /></div>
       </div>
-      <div className="hero-art" aria-hidden="true"><img src={ASSETS['hero-illustration.webp']} alt="" /></div>
-    </section>
-  );
-}
-
-function ContinueBlock({ lessons, onOpen }) {
-  const nextLesson = lessons.find(x => x.progress > 0 && x.progress < 100) || lessons.find(x => x.progress === 0) || lessons[0];
-  return (
-    <section className="continue-block">
-      <div className="continue-orb"><Play size={23} fill="currentColor" /></div>
-      <div className="continue-copy">
-        <div className="eyebrow">Продолжить с места, где остановились</div>
-        <h2>{nextLesson.title}</h2>
-        <p>Урок {nextLesson.position} · {nextLesson.duration} мин · {nextLesson.tagSecondary}</p>
-      </div>
-      <div className="continue-stats">
-        <div><span>{nextLesson.progress}%</span><small>пройдено</small></div>
-        <div><span>+24</span><small>XP за урок</small></div>
-      </div>
-      <button onClick={() => onOpen(nextLesson.id)} className="continue-button">Продолжить урок <ArrowRight size={17} /></button>
-      <div className="continue-decoration one" /><div className="continue-decoration two" />
+      <div className="hero-art" aria-hidden="true"><img src="/assets/hero-module.webp" alt="" /></div>
     </section>
   );
 }
@@ -380,10 +360,6 @@ function App() {
     lessons: current.lessons.map(lesson => lesson.id === id ? { ...lesson, progress } : lesson),
   }));
 
-  const continueLesson = id => {
-    const lesson = module.lessons.find(x => x.id === id);
-    if (lesson) updateProgress(id, Math.min(100, Math.max(lesson.progress, 60)));
-  };
 
   return (
     <div className="app-shell">
@@ -393,8 +369,6 @@ function App() {
         {section === 'learn' ? (
           <main className="main-content">
             <Hero module={module} />
-            <ContinueBlock lessons={module.lessons} onOpen={continueLesson} />
-            <div className="section-heading"><div><span>Модуль 7</span><h2>Уроки модуля</h2></div><button>План обучения <ArrowRight size={15} /></button></div>
             <section className="lessons-grid">
               {module.lessons.map(lesson => <LessonCard key={lesson.id} lesson={lesson} onProgress={updateProgress} />)}
             </section>
