@@ -360,7 +360,7 @@ svg{stroke-width:1.8}
 .lesson-body h3{font-size:16px;font-weight:800;letter-spacing:-.3px}
 .lesson-body p{font-size:11px;color:#657986}
 .tag{font-size:9.5px;font-weight:700;padding:4px 10px}
-.lesson-btn{transition:background-color .12s ease,border-color .12s ease;color .12s ease}
+.lesson-btn{transition:background-color .12s ease,border-color .12s ease,color .12s ease}
 .lesson-btn:hover{transform:none}
 .progress-fill{transition:width .22s ease!important}
 
