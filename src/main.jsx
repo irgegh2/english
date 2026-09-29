@@ -32,7 +32,7 @@ const sectionConfig = {
     label: 'Обучение',
     icon: BookOpen,
     items: [
-      [Play, 'Продолжить обучение', 'Модуль 7 · Блок 1'],
+      [Play, 'Продолжить обучение', 'current'],
       [Grid2X2, 'Все модули'],
       [RotateCcw, 'Повторение'],
       [CircleAlert, 'Мои ошибки'],
@@ -65,71 +65,6 @@ const dictionary = [
   ['slang', 'сленг', '♛', '#ffd568'],
   ['to keep in touch', 'оставаться на связи', '●', '#8c75ff'],
 ];
-
-const moduleTitles = [
-  'Старт и знакомство', 'Люди и вещи вокруг', 'Время и привычки', 'Дом и повседневность',
-  'Город и движение', 'Я и мой день', 'Разговорный старт', 'Прошлое и истории',
-  'Планы и будущее', 'Работа и учёба', 'Еда и кафе', 'Покупки и деньги',
-  'Путешествия', 'Здоровье и самочувствие', 'Друзья и отношения',
-  'Хобби и свободное время', 'Новости и медиа', 'Мнения и аргументы',
-  'Фильмы и сериалы', 'Интернет и технологии', 'Британский быт', 'Сленг и живая речь',
-  'Фразовые глаголы I', 'Фразовые глаголы II', 'Условные конструкции',
-  'Сложные времена', 'Письмо и стиль', 'Работа с текстом',
-  'Аудирование: естественная скорость', 'Разговорная уверенность',
-  'Академический английский', 'Дискуссии и дебаты', 'Нюансы и регистр',
-  'Продвинутая грамматика', 'Свободная речь'
-];
-
-const levelForModule = position => {
-  if (position <= 2) return 'A0–A1';
-  if (position <= 7) return 'A1–A2';
-  if (position <= 13) return 'A2–B1';
-  if (position <= 20) return 'B1–B2';
-  if (position <= 27) return 'B2–C1';
-  return 'C1–C2';
-};
-
-const courseModules = moduleTitles.map((title, index) => {
-  const position = index + 1;
-  const progress = position <= 6 ? 100 : position === 7 ? 42 : 0;
-  return {
-    id: position,
-    position,
-    title,
-    level: levelForModule(position),
-    blockCount: 7 + ((position * 3) % 7),
-    progress,
-    description: position === 7
-      ? 'Строим живую разговорную базу: фразы, вопросы, связки, произношение и понимание речи.'
-      : 'Последовательный набор блоков с грамматикой, лексикой, аудированием и практикой речи.'
-  };
-});
-
-const module7Blocks = [
-  { id: 1, position: 1, title: 'Разговорный фундамент', subtitle: 'Собираем базовые фразы и начинаем говорить без перевода в голове.', lessons: 6, progress: 58, duration: 96, imageKey: 'lesson-1.webp' },
-  { id: 2, position: 2, title: 'Вопросы и быстрые ответы', subtitle: 'Учимся поддерживать диалог и не теряться после первой реплики.', lessons: 8, progress: 20, duration: 118, imageKey: 'lesson-3.webp' },
-  { id: 3, position: 3, title: 'Естественные связки', subtitle: 'Actually, by the way, I mean и другие связки живой речи.', lessons: 7, progress: 0, duration: 105, imageKey: 'lesson-4.webp' },
-  { id: 4, position: 4, title: 'Слушаем настоящую речь', subtitle: 'Разбираем скорость, сокращения и знакомимся с британским звучанием.', lessons: 9, progress: 0, duration: 130, imageKey: 'lesson-6.webp' },
-  { id: 5, position: 5, title: 'Сленг без кринжа', subtitle: 'Современные выражения из фильмов, мемов и обычных разговоров.', lessons: 6, progress: 0, duration: 88, imageKey: 'lesson-5.webp' },
-  { id: 6, position: 6, title: 'Повседневные ситуации', subtitle: 'Кафе, магазин, встреча, дорога — практикуемся в реальных сценариях.', lessons: 8, progress: 0, duration: 112, imageKey: 'lesson-2.webp' },
-  { id: 7, position: 7, title: 'Говорим увереннее', subtitle: 'Интонация, реакция, перефразирование и разговорные стратегии.', lessons: 7, progress: 0, duration: 104, imageKey: 'lesson-3.webp' },
-  { id: 8, position: 8, title: 'Финальная практика', subtitle: 'Собираем весь модуль в большие диалоги и мини-сценарии.', lessons: 5, progress: 0, duration: 80, imageKey: 'lesson-1.webp' },
-];
-
-const blocksForModule = moduleData => moduleData.position === 7
-  ? module7Blocks
-  : Array.from({ length: moduleData.blockCount }, (_, index) => ({
-      id: index + 1,
-      position: index + 1,
-      title: index === 0 ? `${moduleData.title}: основа` : `Тема ${index + 1}`,
-      subtitle: index === 0
-        ? 'Ключевые конструкции, слова и практика для старта этого модуля.'
-        : 'Грамматика, лексика и практика в одном последовательном блоке.',
-      lessons: 5 + ((index + moduleData.position) % 5),
-      progress: moduleData.progress === 100 ? 100 : 0,
-      duration: 75 + index * 7,
-      imageKey: `lesson-${(index % 6) + 1}.webp`,
-    }));
 
 function Logo() {
   return (
@@ -198,7 +133,7 @@ function LessonCard({ lesson, onProgress }) {
   );
 }
 
-function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect }) {
+function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect, currentLearningLabel }) {
   const config = sectionConfig[section];
   return (
     <aside className={`sidebar ${switching ? 'sidebar-switching' : ''}`}>
@@ -208,7 +143,9 @@ function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect }
           <strong>{section === 'learn' ? 'Курс British English' : section === 'community' ? 'Учимся вместе' : 'Твоя панель'}</strong>
         </div>
         <nav className="side-nav">
-          {config.items.map(([Icon, label, subtitle], index) => (
+          {config.items.map(([Icon, label, subtitleKey], index) => {
+            const subtitle = subtitleKey === 'current' ? currentLearningLabel : subtitleKey;
+            return (
             <button
               key={label}
               style={{ '--nav-order': index }}
@@ -225,7 +162,8 @@ function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect }
               </span>
               <ArrowRight size={14} className="side-arrow" />
             </button>
-          ))}
+            );
+          })}
         </nav>
 
         {section === 'learn' && (
@@ -342,55 +280,57 @@ function LearningBreadcrumbs({ moduleData, block, onModules, onModule }) {
   );
 }
 
-function ModulesPage({ onOpenModule }) {
+function ModulesPage({ modules, loading, currentModulePosition, onOpenModule }) {
   return (
     <main className="main-content learning-page modules-page">
       <section className="learning-head">
         <div>
           <span className="learning-kicker">British English · полный курс</span>
           <h1>Все модули</h1>
-          <p>Сначала выбираешь модуль. Внутри него — блоки, а уже внутри блока находятся конкретные уроки.</p>
+          <p>35 модулей курса. Внутри каждого модуля находятся тематические блоки, а содержание уроков добавим следующим этапом.</p>
         </div>
         <div className="course-summary">
-          <strong>35</strong>
+          <strong>{modules.length || 35}</strong>
           <span>модулей</span>
           <i />
-          <strong>6</strong>
-          <span>уровней</span>
+          <strong>{modules.reduce((sum, item) => sum + (item.blockCount || 0), 0)}</strong>
+          <span>блоков</span>
         </div>
       </section>
-      <section className="module-list">
-        {courseModules.map(moduleData => (
-          <button
-            className={`module-row ${moduleData.position === 7 ? 'current' : ''}`}
-            key={moduleData.position}
-            onClick={() => onOpenModule(moduleData)}
-          >
-            <div className="module-index">{String(moduleData.position).padStart(2, '0')}</div>
-            <div className="module-row-main">
-              <div className="module-row-top">
-                <span className="module-level">{moduleData.level}</span>
-                {moduleData.progress === 100 && <span className="module-done"><Check size={13} /> пройден</span>}
-                {moduleData.position === 7 && <span className="module-now">сейчас</span>}
+
+      {loading ? (
+        <div className="course-loading">Загружаем структуру курса из базы…</div>
+      ) : (
+        <section className="module-list">
+          {modules.map(moduleData => (
+            <button
+              className={`module-row ${moduleData.position === currentModulePosition ? 'current' : ''}`}
+              key={moduleData.id}
+              onClick={() => onOpenModule(moduleData)}
+            >
+              <div className="module-index">{String(moduleData.position).padStart(2, '0')}</div>
+              <div className="module-row-main">
+                <div className="module-row-top">
+                  <span className="module-level">{moduleData.level}</span>
+                  {moduleData.progress === 100 && <span className="module-done"><Check size={13} /> пройден</span>}
+                  {moduleData.position === currentModulePosition && <span className="module-now">сейчас</span>}
+                </div>
+                <h3>{moduleData.title}</h3>
               </div>
-              <h3>{moduleData.title}</h3>
-              <p>{moduleData.description}</p>
-            </div>
-            <div className="module-meta">
-              <div><Layers3 size={16} /><span>{moduleData.blockCount} блоков</span></div>
-              <div className="module-progress-mini"><i><b style={{ width: `${moduleData.progress}%` }} /></i><strong>{moduleData.progress}%</strong></div>
-            </div>
-            <span className="module-open"><ArrowRight size={19} /></span>
-          </button>
-        ))}
-      </section>
+              <div className="module-meta">
+                <div><Layers3 size={16} /><span>{moduleData.blockCount} блоков</span></div>
+                <div className="module-progress-mini"><i><b style={{ width: `${moduleData.progress}%` }} /></i><strong>{moduleData.progress}%</strong></div>
+              </div>
+              <span className="module-open"><ArrowRight size={19} /></span>
+            </button>
+          ))}
+        </section>
+      )}
     </main>
   );
 }
 
-function BlocksPage({ moduleData, onBack, onOpenBlock }) {
-  const blocks = blocksForModule(moduleData);
-  const completed = blocks.filter(block => block.progress === 100).length;
+function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurrentModule, onBack, onOpenBlock }) {
   return (
     <main className="main-content learning-page blocks-page">
       <LearningBreadcrumbs moduleData={moduleData} onModules={onBack} onModule={() => {}} />
@@ -399,44 +339,79 @@ function BlocksPage({ moduleData, onBack, onOpenBlock }) {
         <div className="module-overview-copy">
           <span className="learning-kicker">{moduleData.level} · Модуль {moduleData.position}</span>
           <h1>{moduleData.title}</h1>
-          <p>{moduleData.description}</p>
+          <p>{blocks.length || moduleData.blockCount || 0} тематических блоков из структуры курса.</p>
         </div>
-        <div className="module-overview-stat"><strong>{blocks.length}</strong><span>блоков</span></div>
-        <div className="module-overview-stat"><strong>{completed}</strong><span>пройдено</span></div>
+        <div className="module-overview-stat"><strong>{blocks.length || moduleData.blockCount || 0}</strong><span>блоков</span></div>
+        <div className="module-overview-stat"><strong>{moduleData.progress}%</strong><span>прогресс</span></div>
       </section>
+
       <div className="blocks-title-row">
         <div><span>Содержание модуля</span><h2>Выбери блок</h2></div>
-        <p>В каждом блоке — несколько коротких уроков.</p>
+        <p>Сами уроки добавим позже.</p>
       </div>
-      <section className="blocks-grid">
-        {blocks.map(block => (
-          <button className="block-card" key={block.id} onClick={() => onOpenBlock(block)}>
-            <div className="block-thumb">
-              <img src={ASSETS[block.imageKey] || `/assets/${block.imageKey}`} alt="" />
-              <span>{String(block.position).padStart(2, '0')}</span>
-            </div>
-            <div className="block-copy">
-              <div className="block-topline"><span>{block.lessons} уроков</span><span><Clock3 size={13} /> {block.duration} мин</span></div>
-              <h3>{block.title}</h3>
-              <p>{block.subtitle}</p>
-              <div className="block-progress"><i><b style={{ width: `${block.progress}%` }} /></i><strong>{block.progress}%</strong></div>
-            </div>
-            <span className="block-arrow"><ArrowRight size={17} /></span>
-          </button>
-        ))}
-      </section>
+
+      {loading ? (
+        <div className="course-loading">Загружаем блоки из базы…</div>
+      ) : (
+        <section className="blocks-grid">
+          {blocks.map(block => (
+            <button
+              className={`block-card ${isCurrentModule && block.position === currentBlockPosition ? 'current' : ''}`}
+              key={block.id}
+              onClick={() => onOpenBlock(block)}
+            >
+              <div className="block-thumb">
+                <img src={ASSETS[block.imageKey] || `/assets/${block.imageKey}`} alt="" />
+                <span>{String(block.position).padStart(2, '0')}</span>
+              </div>
+              <div className="block-copy">
+                <div className="block-topline">
+                  <span><BookOpen size={13} /> содержание позже</span>
+                  {isCurrentModule && block.position === currentBlockPosition && <span className="block-current-label">текущий блок</span>}
+                </div>
+                <h3>{block.title}</h3>
+                <p>Уроки и материалы этого блока пока не добавлены.</p>
+              </div>
+              <span className="block-arrow"><ArrowRight size={17} /></span>
+            </button>
+          ))}
+        </section>
+      )}
     </main>
   );
 }
 
-function LessonsPage({ moduleData, block, module, onBackToModules, onBackToModule, onProgress }) {
+function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule }) {
   return (
-    <main className="main-content learning-page lessons-page">
+    <main className="main-content learning-page block-page">
       <LearningBreadcrumbs moduleData={moduleData} block={block} onModules={onBackToModules} onModule={onBackToModule} />
-      <Hero module={module} block={block} />
-      <section className="lessons-grid">
-        {module.lessons.map(lesson => <LessonCard key={lesson.id} lesson={lesson} onProgress={onProgress} />)}
-      </section>
+
+      {loading || !block ? (
+        <div className="course-loading">Открываем блок из базы…</div>
+      ) : (
+        <>
+          <section className="block-detail-hero">
+            <div className="block-detail-copy">
+              <span className="learning-kicker">{moduleData.level} · Модуль {moduleData.position} · Блок {block.position}</span>
+              <h1>{block.title}</h1>
+              <p>Блок создан и связан с модулем в базе данных. Содержание уроков добавим отдельно.</p>
+              <button onClick={onBackToModule}><ChevronLeft size={16} /> Ко всем блокам модуля</button>
+            </div>
+            <div className="block-detail-image">
+              <img src={ASSETS[block.imageKey] || `/assets/${block.imageKey}`} alt="" />
+            </div>
+          </section>
+
+          <section className="empty-block-content">
+            <div className="empty-block-icon"><BookOpen size={24} /></div>
+            <div>
+              <span>Содержание блока</span>
+              <h2>Уроки пока не добавлены</h2>
+              <p>Здесь появятся уроки, когда мы отдельно спроектируем содержание этого блока.</p>
+            </div>
+          </section>
+        </>
+      )}
     </main>
   );
 }
@@ -530,25 +505,34 @@ function CommunityPage() {
 
 function App() {
   const [profile, setProfile] = useState({ name: 'Анна', streak: 12, overallProgress: 62 });
-  const [module, setModule] = useState({
-    title: 'Модуль 7. Разговорный старт',
-    description: 'Прокачиваем базовые навыки общения: учимся строить фразы, задавать вопросы, понимать живую речь и говорить увереннее в повседневных ситуациях.',
-    lessons: fallbackLessons,
-  });
+  const [dashboard, setDashboard] = useState(null);
+  const [modules, setModules] = useState([]);
+  const [blocks, setBlocks] = useState([]);
+  const [selectedModule, setSelectedModule] = useState(null);
+  const [selectedBlock, setSelectedBlock] = useState(null);
+  const [courseLoading, setCourseLoading] = useState(true);
+  const [blocksLoading, setBlocksLoading] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+
   const [section, setSection] = useState('learn');
   const [renderedSection, setRenderedSection] = useState('learn');
   const [switching, setSwitching] = useState(false);
   const [activeItem, setActiveItem] = useState('Все модули');
   const [learningView, setLearningView] = useState('modules');
-  const [selectedModule, setSelectedModule] = useState(courseModules.find(item => item.position === 7));
-  const [selectedBlock, setSelectedBlock] = useState(module7Blocks[0]);
   const switchTimer = useRef(null);
 
   useEffect(() => {
-    fetch('/api/dashboard')
-      .then(r => r.ok ? r.json() : Promise.reject())
-      .then(data => { setProfile(data.profile); setModule(data.module); })
-      .catch(() => {});
+    Promise.all([
+      fetch('/api/dashboard').then(r => r.ok ? r.json() : Promise.reject()),
+      fetch('/api/course/modules').then(r => r.ok ? r.json() : Promise.reject()),
+    ])
+      .then(([dashboardData, modulesData]) => {
+        setDashboard(dashboardData);
+        setProfile(dashboardData.profile);
+        setModules(modulesData);
+      })
+      .catch(() => {})
+      .finally(() => setCourseLoading(false));
   }, []);
 
   useEffect(() => () => {
@@ -575,70 +559,127 @@ function App() {
 
   const openModules = () => {
     setLearningView('modules');
+    setSelectedModule(null);
+    setSelectedBlock(null);
+    setBlocks([]);
     setActiveItem('Все модули');
     window.history.replaceState({}, '', '/learn/modules');
   };
 
-  const openModule = moduleData => {
+  const fetchBlocks = async moduleData => {
+    setBlocksLoading(true);
+    try {
+      const response = await fetch(`/api/course/modules/${moduleData.id}/blocks`);
+      if (!response.ok) throw new Error('Failed to load blocks');
+      const data = await response.json();
+      setBlocks(data.blocks);
+      return data.blocks;
+    } catch {
+      setBlocks([]);
+      return [];
+    } finally {
+      setBlocksLoading(false);
+    }
+  };
+
+  const openModule = async moduleData => {
     setSelectedModule(moduleData);
-    setSelectedBlock(blocksForModule(moduleData)[0]);
+    setSelectedBlock(null);
     setLearningView('blocks');
     setActiveItem('Все модули');
     window.history.replaceState({}, '', `/learn/module-${moduleData.position}`);
+    await fetchBlocks(moduleData);
   };
 
-  const openBlock = block => {
+  const openBlock = async block => {
     setSelectedBlock(block);
-    setLearningView('lessons');
+    setLearningView('block');
+    setBlockLoading(true);
     window.history.replaceState({}, '', `/learn/module-${selectedModule.position}/block-${block.position}`);
+
+    try {
+      const response = await fetch(`/api/course/blocks/${block.id}`);
+      if (!response.ok) throw new Error('Failed to load block');
+      setSelectedBlock(await response.json());
+    } catch {
+      setSelectedBlock(block);
+    } finally {
+      setBlockLoading(false);
+    }
+  };
+
+  const openCurrentLearning = async () => {
+    if (!dashboard?.currentModule || !dashboard?.currentBlock) return;
+
+    const currentModule = modules.find(item => item.id === dashboard.currentModule.id) || dashboard.currentModule;
+    setSelectedModule(currentModule);
+    setActiveItem('Продолжить обучение');
+
+    const moduleBlocks = await fetchBlocks(currentModule);
+    const currentBlock = moduleBlocks.find(item => item.id === dashboard.currentBlock.id) || dashboard.currentBlock;
+    setSelectedBlock(currentBlock);
+    setLearningView('block');
+    window.history.replaceState({}, '', `/learn/module-${currentModule.position}/block-${currentBlock.position}`);
+
+    setBlockLoading(true);
+    try {
+      const response = await fetch(`/api/course/blocks/${currentBlock.id}`);
+      if (response.ok) setSelectedBlock(await response.json());
+    } finally {
+      setBlockLoading(false);
+    }
   };
 
   const handleSidebarItem = label => {
     if (renderedSection !== 'learn') return;
-
-    if (label === 'Все модули') {
-      openModules();
-      return;
-    }
-
-    if (label === 'Продолжить обучение') {
-      const currentModule = courseModules.find(item => item.position === 7);
-      const currentBlock = module7Blocks[0];
-      setSelectedModule(currentModule);
-      setSelectedBlock(currentBlock);
-      setLearningView('lessons');
-      setActiveItem('Продолжить обучение');
-      window.history.replaceState({}, '', '/learn/module-7/block-1');
-    }
+    if (label === 'Все модули') openModules();
+    if (label === 'Продолжить обучение') void openCurrentLearning();
   };
 
-  const updateProgress = (id, progress) => setModule(current => ({
-    ...current,
-    lessons: current.lessons.map(lesson => lesson.id === id ? { ...lesson, progress } : lesson),
-  }));
-
   const renderLearning = () => {
-    if (learningView === 'blocks') {
-      return <BlocksPage moduleData={selectedModule} onBack={openModules} onOpenBlock={openBlock} />;
-    }
-    if (learningView === 'lessons') {
+    if (learningView === 'blocks' && selectedModule) {
       return (
-        <LessonsPage
+        <BlocksPage
           moduleData={selectedModule}
-          block={selectedBlock}
-          module={module}
-          onBackToModules={openModules}
-          onBackToModule={() => openModule(selectedModule)}
-          onProgress={updateProgress}
+          blocks={blocks}
+          loading={blocksLoading}
+          currentBlockPosition={dashboard?.profile?.currentBlockPosition}
+          isCurrentModule={selectedModule.position === dashboard?.profile?.currentModulePosition}
+          onBack={openModules}
+          onOpenBlock={openBlock}
         />
       );
     }
-    return <ModulesPage onOpenModule={openModule} />;
+
+    if (learningView === 'block' && selectedModule) {
+      return (
+        <BlockPage
+          moduleData={selectedModule}
+          block={selectedBlock}
+          loading={blockLoading}
+          onBackToModules={openModules}
+          onBackToModule={() => openModule(selectedModule)}
+        />
+      );
+    }
+
+    return (
+      <ModulesPage
+        modules={modules}
+        loading={courseLoading}
+        currentModulePosition={dashboard?.profile?.currentModulePosition}
+        onOpenModule={openModule}
+      />
+    );
   };
 
   const centerKey = renderedSection === 'learn'
-    ? `learn-${learningView}-${selectedModule?.position || 0}-${selectedBlock?.position || 0}`
+    ? `learn-${learningView}-${selectedModule?.id || 0}-${selectedBlock?.id || 0}`
     : renderedSection;
+
+  const currentLearningLabel = dashboard?.currentModule && dashboard?.currentBlock
+    ? `Модуль ${dashboard.currentModule.position} · Блок ${dashboard.currentBlock.position}`
+    : 'Текущий блок';
 
   return (
     <div className="app-shell">
@@ -650,6 +691,7 @@ function App() {
           setActiveItem={setActiveItem}
           switching={switching}
           onItemSelect={handleSidebarItem}
+          currentLearningLabel={currentLearningLabel}
         />
         <div className={`center-slot ${switching ? 'center-switching' : ''}`}>
           <div className="center-page center-enter" key={centerKey}>
