@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  Activity, ArrowRight, AudioLines, Bell, BookOpen, Bookmark, CalendarDays,
+  Activity, ArrowRight, AudioLines, Bell, BookOpen, Bookmark, CalendarDays, Camera,
   Check, ChevronDown, ChevronLeft, CircleAlert, CircleUserRound, Clock3, Compass, Flame,
   GraduationCap, Grid2X2, Headphones, Heart, Home, Layers3, LibraryBig,
   MessageCircle, Mic2, Play, RotateCcw, Search, Settings2, Share2, Sparkles,
@@ -65,6 +65,19 @@ const dictionary = [
   ['slang', 'сленг', '♛', '#ffd568'],
   ['to keep in touch', 'оставаться на связи', '●', '#8c75ff'],
 ];
+
+const VOICE_PRESETS = [
+  { id: 'ella', name: 'Ella', gender: 'Женский', note: 'мягкий · спокойный', voiceIndex: 0, rate: .88, pitch: 1.05 },
+  { id: 'grace', name: 'Grace', gender: 'Женский', note: 'ясный · нейтральный', voiceIndex: 1, rate: .92, pitch: 1.1 },
+  { id: 'chloe', name: 'Chloe', gender: 'Женский', note: 'живой · энергичный', voiceIndex: 2, rate: .96, pitch: 1.16 },
+  { id: 'oliver', name: 'Oliver', gender: 'Мужской', note: 'спокойный · низкий', voiceIndex: 3, rate: .86, pitch: .9 },
+  { id: 'james', name: 'James', gender: 'Мужской', note: 'нейтральный · чёткий', voiceIndex: 4, rate: .9, pitch: .96 },
+  { id: 'theo', name: 'Theo', gender: 'Мужской', note: 'быстрый · разговорный', voiceIndex: 5, rate: .96, pitch: 1 },
+];
+
+function getVoicePreset(id) {
+  return VOICE_PRESETS.find(voice => voice.id === id) || VOICE_PRESETS[0];
+}
 
 function Logo() {
   return (
@@ -201,46 +214,101 @@ function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect, 
   );
 }
 
-function Topbar({ profile, section, onSectionChange }) {
+function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange }) {
   const [langOpen, setLangOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const selectedVoice = getVoicePreset(voicePreset);
+
   return (
-    <header className="topbar">
-      <Logo />
-      <nav className="top-nav" aria-label="Основные разделы">
-        {Object.entries(sectionConfig).map(([key, item]) => {
-          const Icon = item.icon;
-          return (
-            <button key={key} className={section === key ? 'active' : ''} onClick={() => onSectionChange(key)}>
-              <Icon size={17} />{item.label}
-            </button>
-          );
-        })}
-      </nav>
-      <div className="top-actions">
-        <button className="streak interactive-soft">
-          <Flame size={24} fill="#ff7b17" color="#ff7b17" />
-          <div><b>{profile.streak} дней</b><span>в серии</span></div>
-        </button>
-        <div className="top-progress">
-          <div className="tp-label"><span>Мой прогресс</span><b>{profile.overallProgress}%</b></div>
-          <div className="tp-track"><i style={{ width: `${profile.overallProgress}%` }} /></div>
-        </div>
-        <button className="icon-btn" aria-label="Поиск"><Search size={21} /></button>
-        <div className="language-wrap">
-          <button className="language" onClick={() => setLangOpen(v => !v)}>
-            <span className="flag">🇬🇧</span>British English <ChevronDown size={15} className={langOpen ? 'chev-open' : ''} />
+    <>
+      <header className="topbar">
+        <Logo />
+        <nav className="top-nav" aria-label="Основные разделы">
+          {Object.entries(sectionConfig).map(([key, item]) => {
+            const Icon = item.icon;
+            return (
+              <button key={key} className={section === key ? 'active' : ''} onClick={() => onSectionChange(key)}>
+                <Icon size={17} />{item.label}
+              </button>
+            );
+          })}
+        </nav>
+        <div className="top-actions">
+          <button className="streak interactive-soft">
+            <Flame size={24} fill="#ff7b17" color="#ff7b17" />
+            <div><b>{profile.streak} дней</b><span>в серии</span></div>
           </button>
-          {langOpen && (
-            <div className="language-menu">
-              <button className="selected"><span>🇬🇧</span><div><strong>British English</strong><small>Текущий курс</small></div><Check size={16} /></button>
-              <button disabled><span>🇪🇸</span><div><strong>Español</strong><small>Скоро</small></div></button>
-              <button disabled><span>🇩🇪</span><div><strong>Deutsch</strong><small>Скоро</small></div></button>
-            </div>
-          )}
+          <div className="top-progress">
+            <div className="tp-label"><span>Мой прогресс</span><b>{profile.overallProgress}%</b></div>
+            <div className="tp-track"><i style={{ width: `${profile.overallProgress}%` }} /></div>
+          </div>
+          <button className="icon-btn" aria-label="Поиск"><Search size={21} /></button>
+          <button className="icon-btn settings-trigger" aria-label="Настройки" onClick={() => setSettingsOpen(true)}><Settings2 size={20} /></button>
+          <div className="language-wrap">
+            <button className="language" onClick={() => setLangOpen(v => !v)}>
+              <span className="flag">🇬🇧</span>British English <ChevronDown size={15} className={langOpen ? 'chev-open' : ''} />
+            </button>
+            {langOpen && (
+              <div className="language-menu">
+                <button className="selected"><span>🇬🇧</span><div><strong>British English</strong><small>Текущий курс</small></div><Check size={16} /></button>
+                <button disabled><span>🇪🇸</span><div><strong>Español</strong><small>Скоро</small></div></button>
+                <button disabled><span>🇩🇪</span><div><strong>Deutsch</strong><small>Скоро</small></div></button>
+              </div>
+            )}
+          </div>
+          <button className="avatar" aria-label="Профиль">А<span className="online" /></button>
         </div>
-        <button className="avatar" aria-label="Профиль">А<span className="online" /></button>
-      </div>
-    </header>
+      </header>
+
+      {settingsOpen && (
+        <div className="settings-backdrop" onMouseDown={event => {
+          if (event.target === event.currentTarget) setSettingsOpen(false);
+        }}>
+          <section className="settings-modal" role="dialog" aria-modal="true" aria-label="Настройки">
+            <div className="settings-head">
+              <div>
+                <span>Настройки</span>
+                <h2>Голос озвучки</h2>
+                <p>Выбери голос, которым будут звучать слова, фразы и диалоги.</p>
+              </div>
+              <button className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="Закрыть">×</button>
+            </div>
+
+            <div className="voice-settings-note">
+              <AudioLines size={18} />
+              <div><strong>Сейчас используется демо-озвучка браузера.</strong><span>Когда загрузим твои аудиофайлы, эти же 6 профилей будут переключать реальные записи.</span></div>
+            </div>
+
+            <div className="voice-groups">
+              {['Женский', 'Мужской'].map(group => (
+                <div className="voice-group" key={group}>
+                  <div className="voice-group-title">{group === 'Женский' ? 'Женские голоса' : 'Мужские голоса'}</div>
+                  <div className="voice-grid">
+                    {VOICE_PRESETS.filter(voice => voice.gender === group).map(voice => (
+                      <div className={`voice-card ${voice.id === voicePreset ? 'selected' : ''}`} key={voice.id}>
+                        <button className="voice-select" onClick={() => onVoiceChange(voice.id)}>
+                          <span className="voice-avatar">{voice.name[0]}</span>
+                          <span className="voice-copy"><strong>{voice.name}</strong><small>{voice.note}</small></span>
+                          <span className="voice-radio">{voice.id === voicePreset && <Check size={13} />}</span>
+                        </button>
+                        <button className="voice-preview" onClick={() => speakEnglish('Hello. Nice to meet you.', voice.id)} aria-label={`Прослушать голос ${voice.name}`}>
+                          <Volume2 size={16} /> Послушать
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="settings-footer">
+              <span>Выбран голос: <strong>{selectedVoice.name}</strong></span>
+              <button onClick={() => setSettingsOpen(false)}>Готово</button>
+            </div>
+          </section>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -382,32 +450,42 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 }
 
 
-function speakEnglish(text) {
+function speakEnglish(text, presetId = 'ella') {
   if (typeof window === 'undefined' || !window.speechSynthesis || !text) return;
+
+  const preset = getVoicePreset(presetId);
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'en-GB';
-  utterance.rate = 0.88;
-  utterance.pitch = 1;
+  const voices = window.speechSynthesis.getVoices();
+  const british = voices.filter(voice => /^en-GB/i.test(voice.lang));
+  const english = voices.filter(voice => /^en/i.test(voice.lang));
+  const pool = british.length ? british : english;
+
+  if (pool.length) utterance.voice = pool[preset.voiceIndex % pool.length];
+  utterance.lang = utterance.voice?.lang || 'en-GB';
+  utterance.rate = preset.rate;
+  utterance.pitch = preset.pitch;
+
   window.speechSynthesis.cancel();
   window.speechSynthesis.speak(utterance);
 }
 
 function SceneArt({ type = 'meeting', compact = false }) {
-  const labels = {
-    meeting: 'Hi!',
-    casual: 'Hey!',
-    goodbye: 'Bye',
-    bye: 'Bye!',
-    meet: 'Nice!',
-    ask: 'How?',
+  const captions = {
+    meeting: 'Фото: встреча',
+    casual: 'Фото: неформальная встреча',
+    goodbye: 'Фото: прощание',
+    bye: 'Фото: друзья прощаются',
+    meet: 'Фото: знакомство',
+    ask: 'Фото: How are you?',
   };
 
   return (
-    <div className={`lesson-scene scene-${type} ${compact ? 'compact' : ''}`} aria-hidden="true">
-      <div className="scene-person scene-person-a"><span /></div>
-      <div className="scene-person scene-person-b"><span /></div>
-      <div className="scene-ground" />
-      <div className="scene-bubble">{labels[type] || 'Hi!'}</div>
+    <div className={`lesson-photo-slot photo-${type} ${compact ? 'compact' : ''}`} aria-label={captions[type] || 'Место для фото'}>
+      <div className="photo-placeholder-mark"><Camera size={compact ? 18 : 28} /></div>
+      <div className="photo-placeholder-copy">
+        <strong>Фото 1:1</strong>
+        <span>{captions[type] || 'Сюда загрузим фотографию'}</span>
+      </div>
     </div>
   );
 }
@@ -519,7 +597,7 @@ function ChoiceOptions({ options, answer, selected, onSelect }) {
   );
 }
 
-function LessonRunner({ lesson, onProgress, onExit }) {
+function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const screens = lesson.content?.screens || [];
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -605,7 +683,7 @@ function LessonRunner({ lesson, onProgress, onExit }) {
             <span className="lesson-eyebrow">{screen.eyebrow}</span>
             <h1>{screen.phrase}</h1>
             <p className="lesson-translation">{screen.translation}</p>
-            <button className="lesson-audio-btn" onClick={() => speakEnglish(screen.audio || screen.phrase)}>
+            <button className="lesson-audio-btn" onClick={() => speakEnglish(screen.audio || screen.phrase, voicePreset)}>
               <Volume2 size={20} /> Послушать
             </button>
             <div className="lesson-context-note">{screen.sceneText}</div>
@@ -628,7 +706,7 @@ function LessonRunner({ lesson, onProgress, onExit }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           {screen.type === 'listeningChoice' ? (
-            <button className="lesson-listen-big" onClick={() => speakEnglish(screen.audio)}>
+            <button className="lesson-listen-big" onClick={() => speakEnglish(screen.audio, voicePreset)}>
               <Volume2 size={28} /><span>Воспроизвести</span>
             </button>
           ) : (
@@ -647,7 +725,7 @@ function LessonRunner({ lesson, onProgress, onExit }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           {screen.type === 'listeningDialog' && (
-            <button className="lesson-listen-big" onClick={() => speakEnglish((screen.audioLines || []).join(' ... '))}>
+            <button className="lesson-listen-big" onClick={() => speakEnglish((screen.audioLines || []).join(' ... '), voicePreset)}>
               <Volume2 size={28} /><span>Послушать диалог</span>
             </button>
           )}
@@ -725,7 +803,7 @@ function LessonRunner({ lesson, onProgress, onExit }) {
             {screen.phrases.map((phrase, index) => (
               <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
                 <strong>{phrase}</strong>
-                <button onClick={() => speakEnglish(phrase)}><Volume2 size={18} /> Слушать</button>
+                <button onClick={() => speakEnglish(phrase, voicePreset)}><Volume2 size={18} /> Слушать</button>
                 <button onClick={() => setRepeated(prev => ({ ...prev, [index]: true }))}><Mic2 size={18} /> Повторил{repeated[index] && <Check size={15} />}</button>
               </div>
             ))}
@@ -781,7 +859,7 @@ function LessonRunner({ lesson, onProgress, onExit }) {
   );
 }
 
-function LessonPage({ moduleData, block, lesson, loading, onBackToBlock, onProgress }) {
+function LessonPage({ moduleData, block, lesson, loading, onBackToBlock, onProgress, voicePreset }) {
   if (loading || !lesson) {
     return <main className="main-content learning-page"><div className="course-loading">Загружаем урок из базы…</div></main>;
   }
@@ -809,7 +887,7 @@ function LessonPage({ moduleData, block, lesson, loading, onBackToBlock, onProgr
       <div className="learning-breadcrumbs">
         <button onClick={onBackToBlock}>Блок {block.position}</button><span>/</span><strong>Урок {lesson.position} · {lesson.title}</strong>
       </div>
-      <LessonRunner lesson={lesson} onProgress={onProgress} onExit={onBackToBlock} />
+      <LessonRunner lesson={lesson} onProgress={onProgress} onExit={onBackToBlock} voicePreset={voicePreset} />
     </main>
   );
 }
@@ -913,6 +991,9 @@ function App() {
   const [blocksLoading, setBlocksLoading] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const [lessonLoading, setLessonLoading] = useState(false);
+  const [voicePreset, setVoicePreset] = useState(() => {
+    try { return window.localStorage.getItem('skladno-voice') || 'ella'; } catch { return 'ella'; }
+  });
 
   const [section, setSection] = useState('learn');
   const [renderedSection, setRenderedSection] = useState('learn');
@@ -938,6 +1019,10 @@ function App() {
   useEffect(() => () => {
     if (switchTimer.current) window.clearTimeout(switchTimer.current);
   }, []);
+
+  useEffect(() => {
+    try { window.localStorage.setItem('skladno-voice', voicePreset); } catch {}
+  }, [voicePreset]);
 
   const navigateSection = next => {
     if (next === section) return;
@@ -1115,6 +1200,7 @@ function App() {
             window.history.replaceState({}, '', `/learn/module-${selectedModule.position}/block-${selectedBlock.position}`);
           }}
           onProgress={updateLessonProgress}
+          voicePreset={voicePreset}
         />
       );
     }
@@ -1139,7 +1225,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Topbar profile={profile} section={section} onSectionChange={navigateSection} />
+      <Topbar profile={profile} section={section} onSectionChange={navigateSection} voicePreset={voicePreset} onVoiceChange={setVoicePreset} />
       <div className="layout">
         <Sidebar
           section={renderedSection}
