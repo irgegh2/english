@@ -387,7 +387,7 @@ function LearningBreadcrumbs({ moduleData, block, onModules, onModule }) {
   );
 }
 
-function ModulesPage({ modules, loading, error, currentModulePosition, onOpenModule, onRetry }) {
+function ModulesPage({ modules, loading, error, currentModulePosition, onOpenModule, onPrefetchModule, onRetry }) {
   return (
     <main className="main-content learning-page modules-page">
       <section className="learning-head">
@@ -419,6 +419,8 @@ function ModulesPage({ modules, loading, error, currentModulePosition, onOpenMod
             <button
               className={`module-row ${moduleData.position === currentModulePosition ? 'current' : ''}`}
               key={moduleData.id}
+              onPointerEnter={() => onPrefetchModule?.(moduleData)}
+              onFocus={() => onPrefetchModule?.(moduleData)}
               onClick={() => onOpenModule(moduleData)}
             >
               <div className="module-index">{String(moduleData.position).padStart(2, '0')}</div>
@@ -2163,6 +2165,8 @@ function App() {
   const [blocksLoading, setBlocksLoading] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const [lessonLoading, setLessonLoading] = useState(false);
+  const lessonCacheRef = useRef(new Map());
+  const modulePreloadRef = useRef(new Map());
   const [voicePreset, setVoicePreset] = useState(() => {
     try { return window.localStorage.getItem('skladno-voice') || 'ella'; } catch { return 'ella'; }
   });
@@ -2174,6 +2178,41 @@ function App() {
   const [learningView, setLearningView] = useState('modules');
   const switchTimer = useRef(null);
 
+  const blockWithCachedLessons = block => ({
+    ...block,
+    lessons: (block?.lessons || []).map(lesson => lessonCacheRef.current.get(lesson.id) || lesson),
+  });
+
+  const prefetchModuleLessons = async moduleData => {
+    const moduleId = Number(moduleData?.id);
+    if (!Number.isInteger(moduleId)) return null;
+
+    const existing = modulePreloadRef.current.get(moduleId);
+    if (existing) return existing;
+
+    const request = fetch(`/api/course/modules/${moduleId}/preload`)
+      .then(async response => {
+        if (!response.ok) throw new Error('Failed to preload module lessons');
+        const data = await response.json();
+
+        for (const block of data.blocks || []) {
+          for (const lesson of block.lessons || []) {
+            lessonCacheRef.current.set(lesson.id, lesson);
+          }
+        }
+
+        return data;
+      })
+      .catch(error => {
+        modulePreloadRef.current.delete(moduleId);
+        console.warn('Module lesson prefetch failed:', error);
+        return null;
+      });
+
+    modulePreloadRef.current.set(moduleId, request);
+    return request;
+  };
+
   useEffect(() => {
     let active = true;
 
@@ -2181,36 +2220,36 @@ function App() {
       setCourseLoading(true);
       setCourseError('');
 
-      const [dashboardResult, modulesResult, voicesResult] = await Promise.allSettled([
-        fetchJsonWithStartupRetry('/api/dashboard'),
-        fetchJsonWithStartupRetry('/api/course/modules'),
-        fetchJsonWithStartupRetry('/api/voices'),
-      ]);
+      try {
+        const data = await fetchJsonWithStartupRetry('/api/bootstrap');
+        if (!active) return;
 
-      if (!active) return;
+        const modulesData = Array.isArray(data.modules) ? data.modules : [];
+        setModules(modulesData);
+        setDashboard(data.dashboard || null);
 
-      if (dashboardResult.status === 'fulfilled') {
-        const dashboardData = dashboardResult.value;
-        setDashboard(dashboardData);
-        setProfile(dashboardData.profile);
-        setVoicePreset(dashboardData.profile.voicePreset || 'ella');
-      }
+        if (data.profile) {
+          setProfile(data.profile);
+          setVoicePreset(data.profile.voicePreset || 'ella');
+        }
 
-      if (modulesResult.status === 'fulfilled') {
-        const modulesData = modulesResult.value;
-        setModules(Array.isArray(modulesData) ? modulesData : []);
-        if (!Array.isArray(modulesData) || modulesData.length === 0) {
+        if (Array.isArray(data.voices) && data.voices.length) {
+          setVoiceOptions(data.voices);
+        }
+
+        if (!modulesData.length) {
           setCourseError('Структура курса в базе сейчас пустая.');
         }
-      } else {
-        setCourseError('Не удалось загрузить модули из API.');
-      }
 
-      if (voicesResult.status === 'fulfilled' && Array.isArray(voicesResult.value) && voicesResult.value.length) {
-        setVoiceOptions(voicesResult.value);
+        const currentModule = modulesData.find(item => item.position === data.profile?.currentModulePosition);
+        if (currentModule) void prefetchModuleLessons(currentModule);
+      } catch (error) {
+        if (!active) return;
+        console.warn('Course bootstrap failed:', error);
+        setCourseError('Не удалось загрузить структуру курса из API.');
+      } finally {
+        if (active) setCourseLoading(false);
       }
-
-      setCourseLoading(false);
     };
 
     void loadInitialData();
@@ -2273,59 +2312,62 @@ function App() {
     window.history.replaceState({}, '', '/learn/modules');
   };
 
-  const fetchBlocks = async moduleData => {
-    setBlocksLoading(true);
-    try {
-      const response = await fetch(`/api/course/modules/${moduleData.id}/blocks`);
-      if (!response.ok) throw new Error('Failed to load blocks');
-      const data = await response.json();
-      setBlocks(data.blocks);
-      return data.blocks;
-    } catch {
-      setBlocks([]);
-      return [];
-    } finally {
-      setBlocksLoading(false);
-    }
-  };
+  const openModule = moduleData => {
+    const catalogModule = modules.find(item => item.id === moduleData.id) || moduleData;
+    const moduleBlocks = catalogModule.blocks || [];
 
-  const openModule = async moduleData => {
-    setSelectedModule(moduleData);
+    setSelectedModule(catalogModule);
     setSelectedBlock(null);
     setSelectedLesson(null);
+    setBlocks(moduleBlocks);
+    setBlocksLoading(false);
+    setBlockLoading(false);
     setLearningView('blocks');
     setActiveItem('Все модули');
-    window.history.replaceState({}, '', `/learn/module-${moduleData.position}`);
-    await fetchBlocks(moduleData);
+    window.history.replaceState({}, '', `/learn/module-${catalogModule.position}`);
+
+    void prefetchModuleLessons(catalogModule);
   };
 
-  const openBlock = async block => {
-    setSelectedBlock(block);
+  const openBlock = block => {
+    const catalogBlock = selectedModule?.blocks?.find(item => item.id === block.id) || block;
+    setSelectedBlock(blockWithCachedLessons(catalogBlock));
+    setBlockLoading(false);
     setLearningView('block');
-    setBlockLoading(true);
-    window.history.replaceState({}, '', `/learn/module-${selectedModule.position}/block-${block.position}`);
+    window.history.replaceState({}, '', `/learn/module-${selectedModule.position}/block-${catalogBlock.position}`);
 
-    try {
-      const response = await fetch(`/api/course/blocks/${block.id}`);
-      if (!response.ok) throw new Error('Failed to load block');
-      setSelectedBlock(await response.json());
-    } catch {
-      setSelectedBlock(block);
-    } finally {
-      setBlockLoading(false);
-    }
+    void prefetchModuleLessons(selectedModule).then(() => {
+      setSelectedBlock(current => {
+        if (!current || current.id !== catalogBlock.id) return current;
+        return blockWithCachedLessons(catalogBlock);
+      });
+    });
   };
 
   const openLesson = async lesson => {
-    setSelectedLesson(lesson);
-    setLessonLoading(true);
+    const cachedLesson = lessonCacheRef.current.get(lesson.id);
+
+    setSelectedLesson(cachedLesson || lesson);
+    setLessonLoading(!cachedLesson);
     setLearningView('lesson');
     window.history.replaceState({}, '', `/learn/module-${selectedModule.position}/block-${selectedBlock.position}/lesson-${lesson.position}`);
 
+    if (cachedLesson) return;
+
     try {
-      const response = await fetch(`/api/course/lessons/${lesson.id}`);
-      if (!response.ok) throw new Error('Failed to load lesson');
-      setSelectedLesson(await response.json());
+      const directLessonRequest = fetch(`/api/course/lessons/${lesson.id}`)
+        .then(async response => {
+          if (!response.ok) throw new Error('Failed to load lesson');
+          return response.json();
+        });
+
+      const moduleWarmRequest = prefetchModuleLessons(selectedModule)
+        .then(() => lessonCacheRef.current.get(lesson.id))
+        .then(warmed => warmed || directLessonRequest);
+
+      const fullLesson = await Promise.race([moduleWarmRequest, directLessonRequest]);
+      lessonCacheRef.current.set(fullLesson.id, fullLesson);
+      setSelectedLesson(fullLesson);
     } catch {
       setSelectedLesson(lesson);
     } finally {
@@ -2341,6 +2383,17 @@ function App() {
       lessons: (current.lessons || []).map(item => item.id === selectedLesson.id ? { ...item, progress } : item),
     } : current);
 
+    const cachedLesson = lessonCacheRef.current.get(selectedLesson.id);
+    if (cachedLesson) lessonCacheRef.current.set(selectedLesson.id, { ...cachedLesson, progress });
+
+    setModules(current => current.map(moduleData => ({
+      ...moduleData,
+      blocks: (moduleData.blocks || []).map(block => ({
+        ...block,
+        lessons: (block.lessons || []).map(item => item.id === selectedLesson.id ? { ...item, progress } : item),
+      })),
+    })));
+
     try {
       await fetch(`/api/lessons/${selectedLesson.id}/progress`, {
         method: 'PATCH',
@@ -2352,26 +2405,29 @@ function App() {
     }
   };
 
-  const openCurrentLearning = async () => {
+  const openCurrentLearning = () => {
     if (!dashboard?.currentModule || !dashboard?.currentBlock) return;
 
     const currentModule = modules.find(item => item.id === dashboard.currentModule.id) || dashboard.currentModule;
-    setSelectedModule(currentModule);
-    setActiveItem('Продолжить обучение');
-
-    const moduleBlocks = await fetchBlocks(currentModule);
+    const moduleBlocks = currentModule.blocks || [];
     const currentBlock = moduleBlocks.find(item => item.id === dashboard.currentBlock.id) || dashboard.currentBlock;
-    setSelectedBlock(currentBlock);
+
+    setSelectedModule(currentModule);
+    setBlocks(moduleBlocks);
+    setBlocksLoading(false);
+    setSelectedBlock(blockWithCachedLessons(currentBlock));
+    setBlockLoading(false);
+    setActiveItem('Продолжить обучение');
     setLearningView('block');
     window.history.replaceState({}, '', `/learn/module-${currentModule.position}/block-${currentBlock.position}`);
 
-    setBlockLoading(true);
-    try {
-      const response = await fetch(`/api/course/blocks/${currentBlock.id}`);
-      if (response.ok) setSelectedBlock(await response.json());
-    } finally {
-      setBlockLoading(false);
-    }
+    void prefetchModuleLessons(currentModule).then(() => {
+      setSelectedBlock(current => {
+        if (!current || current.id !== currentBlock.id) return current;
+        const catalogBlock = currentModule.blocks?.find(item => item.id === currentBlock.id) || currentBlock;
+        return blockWithCachedLessons(catalogBlock);
+      });
+    });
   };
 
   const handleSidebarItem = label => {
@@ -2433,6 +2489,7 @@ function App() {
         error={courseError}
         currentModulePosition={dashboard?.profile?.currentModulePosition}
         onOpenModule={openModule}
+        onPrefetchModule={prefetchModuleLessons}
         onRetry={() => window.location.reload()}
       />
     );
