@@ -545,10 +545,14 @@ function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveSt
         method: 'PATCH',
         body: JSON.stringify({ audioFiles }),
       });
-      setEntries(list => list.map(item => item.id === entry.id ? updated : item));
+      setEntries(list => list.map(item => item.id === entry.id
+        ? { ...updated, text: item.text, key: normalizeAudioPhrase(item.text) }
+        : item));
       onSaveState('saved');
     } catch (error) {
-      setEntries(list => list.map(item => item.id === entry.id ? previous : item));
+      setEntries(list => list.map(item => item.id === entry.id
+        ? { ...item, audioFiles: previous.audioFiles || {} }
+        : item));
       onSaveState('error');
       window.alert(error.message);
     }
