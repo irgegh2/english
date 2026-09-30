@@ -498,6 +498,61 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 
 
 let activeLessonAudio = null;
+const lessonAudioPreloadCache = new Map();
+const lessonImagePreloadCache = new Set();
+
+function collectLessonMediaUrls(lesson, presetId) {
+  const audio = new Set();
+  const images = new Set();
+
+  for (const screen of lesson?.content?.screens || []) {
+    const direct = screen?.audioFiles?.[presetId];
+    const resolved = screen?.resolvedAudioFiles?.[presetId];
+    if (direct) audio.add(direct);
+    if (resolved) audio.add(resolved);
+
+    for (const item of screen?.resolvedAudioSequence || []) {
+      const url = item?.audioFiles?.[presetId];
+      if (url) audio.add(url);
+    }
+
+    for (const files of Object.values(screen?.resolvedAudioByText || {})) {
+      const url = files?.[presetId];
+      if (url) audio.add(url);
+    }
+
+    const imageUrl = screen?.resolvedImageUrl || screen?.imageUrl;
+    if (imageUrl) images.add(imageUrl);
+    for (const item of screen?.items || []) {
+      const itemImageUrl = item?.resolvedImageUrl || item?.imageUrl;
+      if (itemImageUrl) images.add(itemImageUrl);
+    }
+  }
+
+  return { audio: [...audio], images: [...images] };
+}
+
+function preloadLessonMedia(lesson, presetId) {
+  if (typeof window === 'undefined') return;
+  const urls = collectLessonMediaUrls(lesson, presetId);
+
+  for (const url of urls.audio) {
+    if (lessonAudioPreloadCache.has(url)) continue;
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.src = url;
+    audio.load();
+    lessonAudioPreloadCache.set(url, audio);
+  }
+
+  for (const url of urls.images) {
+    if (lessonImagePreloadCache.has(url)) continue;
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = url;
+    lessonImagePreloadCache.add(url);
+  }
+}
 
 const UI_SOUND_VERSION = '20260930-6';
 const UI_SOUNDS = {
@@ -1531,6 +1586,10 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   const screen = screens[step];
   const screenAudio = getScreenAudio(screen, voicePreset);
+
+  useEffect(() => {
+    preloadLessonMedia(lesson, voicePreset);
+  }, [lesson?.id, lesson?.content, voicePreset]);
 
   useEffect(() => {
     setAnswers({});
