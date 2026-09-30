@@ -480,10 +480,6 @@ function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveSt
   const [filter, setFilter] = useState('');
   const textTimers = useRef({});
 
-  useEffect(() => () => {
-    Object.values(textTimers.current).forEach(timer => window.clearTimeout(timer));
-  }, []);
-
   const filteredEntries = useMemo(() => {
     const query = normalizeAudioPhrase(filter);
     if (!query) return entries;
@@ -521,7 +517,11 @@ function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveSt
           method: 'PATCH',
           body: JSON.stringify({ text }),
         });
-        setEntries(list => list.map(entry => entry.id === id ? updated : entry));
+        setEntries(list => list.map(entry => {
+          if (entry.id !== id) return entry;
+          if (entry.text === text) return updated;
+          return { ...entry, key: normalizeAudioPhrase(entry.text), updatedAt: updated.updatedAt };
+        }));
         onSaveState('saved');
       } catch (error) {
         onSaveState('error');
