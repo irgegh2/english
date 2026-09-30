@@ -470,19 +470,62 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 let activeLessonAudio = null;
 
 const UI_SOUNDS = {
-  click: '/assets/sounds/mclick.mp3',
-  success: '/assets/sounds/success.mp3',
-  error: '/assets/sounds/error.mp3',
-  end: '/assets/sounds/end.mp3',
+  click: { url: '/assets/sounds/mclick.mp3', start: 0.025, end: 0.055, volume: 0.38 },
+  success: { url: '/assets/sounds/success.mp3', start: 0.025, end: 0.525, volume: 0.62 },
+  error: { url: '/assets/sounds/error.mp3', start: 0.025, end: 0.785, volume: 0.62 },
+  end: { url: '/assets/sounds/end.mp3', start: 0.025, end: 1.36, volume: 0.72 },
 };
 
-function playUiSound(name) {
-  const url = UI_SOUNDS[name];
-  if (!url || typeof window === 'undefined') return;
+const uiSoundPools = {};
 
-  const audio = new Audio(url);
-  audio.volume = name === 'click' ? 0.38 : name === 'end' ? 0.72 : 0.62;
-  audio.play().catch(() => {});
+function getUiSoundPool(name) {
+  if (typeof window === 'undefined') return [];
+  if (uiSoundPools[name]) return uiSoundPools[name];
+
+  const config = UI_SOUNDS[name];
+  if (!config) return [];
+
+  const size = name === 'click' ? 5 : 2;
+  uiSoundPools[name] = Array.from({ length: size }, () => {
+    const audio = new Audio(config.url);
+    audio.preload = 'auto';
+    audio.volume = config.volume;
+    return audio;
+  });
+  return uiSoundPools[name];
+}
+
+function playUiSound(name) {
+  const config = UI_SOUNDS[name];
+  if (!config || typeof window === 'undefined') return;
+
+  const pool = getUiSoundPool(name);
+  const audio = pool.find(item => item.paused || item.ended) || pool[0];
+  if (!audio) return;
+
+  const start = () => {
+    try {
+      audio.pause();
+      audio.currentTime = config.start;
+      audio.volume = config.volume;
+      void audio.play();
+
+      window.setTimeout(() => {
+        if (!audio.paused && audio.currentTime >= config.end - 0.04) {
+          audio.pause();
+          audio.currentTime = config.start;
+        }
+      }, Math.max(20, (config.end - config.start) * 1000));
+    } catch {}
+  };
+
+  if (audio.readyState >= 1) start();
+  else audio.addEventListener('loadedmetadata', start, { once: true });
+}
+
+function preloadUiSounds() {
+  if (typeof window === 'undefined') return;
+  Object.keys(UI_SOUNDS).forEach(name => getUiSoundPool(name).forEach(audio => audio.load()));
 }
 
 function installGlobalClickSound() {
@@ -1515,5 +1558,6 @@ function App() {
 }
 
 const isAdminRoute = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
+preloadUiSounds();
 installGlobalClickSound();
 createRoot(document.getElementById('root')).render(isAdminRoute ? <AdminApp /> : <App />);
