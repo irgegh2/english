@@ -225,6 +225,16 @@ const normalizeLibraryKey = value => asString(value)
 const normalizeAudioPhrase = normalizeLibraryKey;
 const normalizeMediaName = normalizeLibraryKey;
 
+const expandReusableAudioPhrase = value => {
+  const phrase = asString(value).trim();
+  if (!phrase) return [];
+  const parts = phrase.split(/\s*[—–-]\s*/).map(part => part.trim()).filter(Boolean);
+  if (parts.length > 1 && parts.every(part => /^[A-Za-z][.!?]?$/.test(part))) {
+    return parts.map(part => part.replace(/[.!?]+$/, ''));
+  }
+  return [phrase];
+};
+
 const sanitizeAudioFiles = value => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const files = {};
@@ -242,9 +252,12 @@ async function hydrateLessonContent(lesson) {
     : [];
 
   const phraseKeys = [...new Set(
-    screens
-      .map(screen => normalizeAudioPhrase(screen?.audioPhrase))
-      .filter(Boolean)
+    screens.flatMap(screen => [
+      ...expandReusableAudioPhrase(screen?.audioPhrase).map(phrase => normalizeAudioPhrase(phrase)),
+      ...(Array.isArray(screen?.audioPhrases)
+        ? screen.audioPhrases.flatMap(phrase => expandReusableAudioPhrase(phrase).map(part => normalizeAudioPhrase(part)))
+        : []),
+    ]).filter(Boolean)
   )];
 
   const mediaIds = [...new Set(
@@ -277,6 +290,18 @@ async function hydrateLessonContent(lesson) {
         const phraseKey = normalizeAudioPhrase(screen?.audioPhrase);
         const resolvedAudioFiles = phraseKey ? audioByKey.get(phraseKey) : null;
         if (resolvedAudioFiles) next.resolvedAudioFiles = resolvedAudioFiles;
+
+        if (Array.isArray(screen?.audioPhrases) && screen.audioPhrases.length) {
+          next.resolvedAudioSequence = screen.audioPhrases.flatMap(phrase =>
+            expandReusableAudioPhrase(phrase).map(part => {
+              const key = normalizeAudioPhrase(part);
+              return {
+                phrase: part,
+                audioFiles: key ? (audioByKey.get(key) || {}) : {},
+              };
+            })
+          );
+        }
 
         const mediaId = Number(screen?.mediaId);
         const media = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
@@ -854,9 +879,26 @@ app.patch('/api/admin/audio-dictionary/:id', async (req, res) => {
 
         let changed = false;
         const screens = content.screens.map(screen => {
-          if (normalizeAudioPhrase(screen?.audioPhrase) !== renamedPhrase.oldKey) return screen;
-          changed = true;
-          return { ...screen, audioPhrase: renamedPhrase.text };
+          let next = screen;
+          let screenChanged = false;
+
+          if (normalizeAudioPhrase(screen?.audioPhrase) === renamedPhrase.oldKey) {
+            next = { ...next, audioPhrase: renamedPhrase.text };
+            changed = true;
+            screenChanged = true;
+          }
+
+          if (Array.isArray(screen?.audioPhrases)) {
+            const audioPhrases = screen.audioPhrases.map(phrase => {
+              if (normalizeAudioPhrase(phrase) !== renamedPhrase.oldKey) return phrase;
+              changed = true;
+              screenChanged = true;
+              return renamedPhrase.text;
+            });
+            if (screenChanged) next = { ...next, audioPhrases };
+          }
+
+          return next;
         });
 
         if (changed) lessonUpdates.push({ id: lesson.id, content: { ...content, screens } });

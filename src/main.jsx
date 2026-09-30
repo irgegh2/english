@@ -670,6 +670,18 @@ function getScreenAudio(screen, presetId) {
   return screen?.resolvedAudioFiles?.[presetId] || screen?.audioFiles?.[presetId] || '';
 }
 
+function getScreenAudioSequence(screen, presetId) {
+  const sequence = Array.isArray(screen?.resolvedAudioSequence)
+    ? screen.resolvedAudioSequence
+      .map(item => item?.audioFiles?.[presetId] || '')
+      .filter(Boolean)
+    : [];
+  if (sequence.length) return sequence;
+
+  const single = getScreenAudio(screen, presetId);
+  return single ? [single] : [];
+}
+
 function playLessonAudio(url) {
   if (!url || typeof window === 'undefined') return false;
 
@@ -698,6 +710,49 @@ function LessonAudioButton({ url, large = false, label = 'Послушать' })
     >
       <Volume2 size={large ? 28 : 20} />
       <span>{label}</span>
+    </button>
+  );
+}
+
+function playLessonAudioSequence(urls = []) {
+  const queue = urls.filter(Boolean);
+  if (!queue.length || typeof window === 'undefined') return false;
+
+  if (activeLessonAudio) {
+    activeLessonAudio.pause();
+    activeLessonAudio.currentTime = 0;
+    activeLessonAudio = null;
+  }
+
+  let index = 0;
+  const playNext = () => {
+    if (index >= queue.length) {
+      activeLessonAudio = null;
+      return;
+    }
+
+    const audio = new Audio(queue[index]);
+    index += 1;
+    activeLessonAudio = audio;
+    audio.addEventListener('ended', playNext, { once: true });
+    audio.addEventListener('error', playNext, { once: true });
+    audio.play().catch(playNext);
+  };
+
+  playNext();
+  return true;
+}
+
+function LessonAudioSequenceButton({ urls = [], large = false, label = 'Послушать' }) {
+  if (!urls.length) return null;
+  return (
+    <button
+      className={large ? 'lesson-listen-big' : 'lesson-audio-btn'}
+      onClick={() => playLessonAudioSequence(urls)}
+      title={label}
+    >
+      <Volume2 size={large ? 28 : 20} />
+      <span>{label}{urls.length > 1 ? ` · ${urls.length}` : ''}</span>
     </button>
   );
 }
@@ -782,7 +837,7 @@ function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule
               <h1>{block.title}</h1>
               <p>
                 {lessons.length
-                  ? `${lessons.length} уроков. Первый урок уже собран как интерактивный сценарий; остальные пока сохранены как структура.`
+                  ? `${lessons.length} уроков. Уроки 1–6 собраны как полноценные интерактивные сценарии первого блока.`
                   : 'Уроки и материалы этого блока пока не добавлены.'}
               </p>
               <button onClick={onBackToModule}><ChevronLeft size={16} /> Ко всем блокам модуля</button>
@@ -839,6 +894,573 @@ function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false,
   );
 }
 
+
+const normalizeAnswerText = value => String(value || '')
+  .trim()
+  .replace(/^•\s*/, '')
+  .replace(/^["“”'‘’]+|["“”'‘’]+$/g, '')
+  .replace(/[.!?]+$/, '')
+  .toLocaleLowerCase('en-US');
+
+function inferSpecQuestions(screen) {
+  if (Array.isArray(screen?.questions) && screen.questions.length) return screen.questions;
+
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  const questions = [];
+  const isMeta = line => /^(варианты|ответ|правильн|неправильн|методическ|что закреп|что происходит|важно|зачем|следующ|результат|пример|картинка|аудио)\b/i.test(line);
+
+  for (let index = 0; index < lines.length;) {
+    if (!lines[index].startsWith('• ')) {
+      index += 1;
+      continue;
+    }
+
+    const options = [];
+    const runStart = index;
+    while (index < lines.length && lines[index].startsWith('• ')) {
+      const option = lines[index].replace(/^•\s*/, '').trim();
+      if (option) options.push(option);
+      index += 1;
+    }
+    if (options.length < 2) continue;
+
+    let markerIndex = -1;
+    let multiple = false;
+    for (let look = index; look < Math.min(lines.length, index + 10); look += 1) {
+      const value = lines[look].replace(/:$/, '').trim();
+      if (/^правильные$/i.test(value)) {
+        markerIndex = look;
+        multiple = true;
+        break;
+      }
+      if (/^(правильный ответ|правильная фраза|правильный вариант|правильный|ответ|неправильная фраза|неправильная)$/i.test(value)) {
+        markerIndex = look;
+        break;
+      }
+      if (lines[look].startsWith('• ')) break;
+    }
+    if (markerIndex < 0) continue;
+
+    const expected = [];
+    for (let look = markerIndex + 1; look < Math.min(lines.length, markerIndex + 8); look += 1) {
+      const value = lines[look].replace(/^•\s*/, '').trim();
+      if (!value) continue;
+      if (isMeta(value) && expected.length) break;
+      const option = options.find(item => normalizeAnswerText(item) === normalizeAnswerText(value));
+      if (option) {
+        expected.push(option);
+        if (!multiple) break;
+        continue;
+      }
+      if (expected.length) break;
+    }
+    if (!expected.length) continue;
+
+    let prompt = '';
+    for (let look = runStart - 1; look >= Math.max(0, runStart - 12); look -= 1) {
+      const value = lines[look].trim();
+      if (!value || /^(варианты|выбери|пример\s*\d*|задание\s*\d*)\s*:?$/i.test(value)) continue;
+      if (isMeta(value)) continue;
+      prompt = value;
+      break;
+    }
+
+    questions.push({
+      prompt: prompt || screen.title || `Вопрос ${questions.length + 1}`,
+      options,
+      ...(expected.length > 1 ? { answers: expected } : { answer: expected[0] }),
+    });
+  }
+
+  return questions;
+}
+
+function inferSpecPairs(screen) {
+  const pairs = Array.isArray(screen?.pairs)
+    ? screen.pairs.map(pair => [...pair])
+    : [];
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+
+  for (let index = 1; index < lines.length; index += 1) {
+    if (!lines[index].startsWith('→')) continue;
+    const left = lines[index - 1].trim();
+    const right = lines[index].replace(/^→\s*/, '').trim();
+    if (!left || !right || /^(ситуация|следующее|цель|что |важно)/i.test(left)) continue;
+    if (!pairs.some(pair => pair[0] === left && pair.slice(1).join(' → ') === right)) pairs.push([left, right]);
+  }
+
+  if (screen?.mode === 'classify') {
+    for (const question of inferSpecQuestions(screen)) {
+      if (!question.answer || !question.prompt) continue;
+      const left = question.prompt.replace(/:$/, '').trim();
+      const right = question.answer.trim();
+      if (!left || !right || /^вопрос\s*\d*$/i.test(left)) continue;
+      if (!pairs.some(pair => pair[0] === left && pair.slice(1).join(' → ') === right)) pairs.push([left, right]);
+    }
+  }
+
+  return pairs;
+}
+
+function inferSpecOrder(screen) {
+  if (Array.isArray(screen?.tokens) && screen.tokens.length && Array.isArray(screen?.orderAnswer) && screen.orderAnswer.length) {
+    return { tokens: screen.tokens, answer: screen.orderAnswer };
+  }
+
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  let tokens = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/^(карточки|элементы|слова)\s*:?$/i.test(lines[index])) continue;
+    const next = [];
+    for (let look = index + 1; look < lines.length && lines[look].startsWith('• '); look += 1) {
+      next.push(lines[look].replace(/^•\s*/, '').trim());
+    }
+    if (next.length >= 2) {
+      tokens = next;
+      break;
+    }
+  }
+
+  if (!tokens.length) return { tokens: [], answer: [] };
+
+  let answerText = '';
+  for (let index = 0; index < lines.length; index += 1) {
+    const marker = lines[index].replace(/:$/, '').trim();
+    if (!/^(правильно|правильный порядок|правильная последовательность|нужно расположить их|ответ|результат)$/i.test(marker)) continue;
+    const next = lines[index + 1]?.replace(/^•\s*/, '').trim();
+    if (next) {
+      answerText = next;
+      break;
+    }
+  }
+
+  if (!answerText) return { tokens: [], answer: [] };
+
+  const normalizedAnswer = answerText.replace(/[.!?]+$/, '').trim();
+  const allSingleLetters = tokens.every(token => /^[A-Za-z]$/.test(token));
+  const answer = allSingleLetters && /^[A-Za-z]+$/.test(normalizedAnswer)
+    ? normalizedAnswer.split('')
+    : normalizedAnswer.split(/\s+/).filter(Boolean);
+
+  if (answer.length !== tokens.length) return { tokens: [], answer: [] };
+  return { tokens, answer };
+}
+
+function getSpecQuestionContext(screen) {
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  const context = [];
+
+  for (const line of lines) {
+    if (
+      line.startsWith('• ') ||
+      line.startsWith('→') ||
+      /^(варианты|ответ|правильн|неправильн|вопрос\s*\d*|задание\s*\d*)\b/i.test(line.replace(/:$/, ''))
+    ) break;
+    context.push(line);
+  }
+
+  return context;
+}
+
+function inferSpecExpectedText(screen) {
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const marker = lines[index].replace(/:$/, '').trim();
+    if (!/^(результат|правильный ответ|ответ)$/i.test(marker)) continue;
+    for (let look = index + 1; look < Math.min(lines.length, index + 5); look += 1) {
+      const value = lines[look].replace(/^•\s*/, '').trim();
+      if (!value || /^(что |метод|важно|зачем)/i.test(value)) continue;
+      return value;
+    }
+  }
+  return '';
+}
+
+function MultiSelectOptions({ options, answers = [], selected = [], onSelect, confirmed = false, locked = false }) {
+  const selectedValues = Array.isArray(selected) ? selected : [];
+
+  return (
+    <div className="lesson-options spec-multiselect">
+      {options.map(option => {
+        const isSelected = selectedValues.includes(option);
+        const shouldBeSelected = answers.includes(option);
+        const isCorrect = confirmed && isSelected && shouldBeSelected;
+        const isWrong = confirmed && isSelected && !shouldBeSelected;
+        const isMissed = confirmed && !isSelected && shouldBeSelected;
+        const stateClass = isCorrect ? 'correct' : isWrong || isMissed ? 'wrong' : isSelected ? 'selected' : '';
+
+        return (
+          <button
+            key={option}
+            className={stateClass}
+            onClick={() => {
+              if (locked) return;
+              const next = isSelected
+                ? selectedValues.filter(value => value !== option)
+                : [...selectedValues, option];
+              onSelect(next);
+            }}
+            disabled={locked}
+          >
+            <span>{option}</span>
+            {isSelected && <Check size={18} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function VoicePracticeRecorder({ done = false, onDone, compact = false }) {
+  const [recording, setRecording] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [error, setError] = useState('');
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    streamRef.current?.getTracks?.().forEach(track => track.stop());
+  }, [previewUrl]);
+
+  const stop = () => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+  };
+
+  const start = async () => {
+    setError('');
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Запись голоса недоступна в этом браузере. Можно отметить фразу как произнесённую.');
+      return;
+    }
+
+    try {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl('');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      recorderRef.current = mediaRecorder;
+
+      mediaRecorder.addEventListener('dataavailable', event => {
+        if (event.data?.size) chunksRef.current.push(event.data);
+      });
+      mediaRecorder.addEventListener('stop', () => {
+        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        if (blob.size) setPreviewUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+        setRecording(false);
+        onDone?.();
+      }, { once: true });
+
+      mediaRecorder.start();
+      setRecording(true);
+    } catch (err) {
+      setRecording(false);
+      setError(err?.name === 'NotAllowedError'
+        ? 'Нет доступа к микрофону. Разреши микрофон браузеру или отметь выполнение вручную.'
+        : 'Не удалось начать запись голоса.');
+    }
+  };
+
+  return (
+    <div className={`voice-practice-recorder ${compact ? 'compact' : ''} ${done ? 'done' : ''}`}>
+      <button
+        type="button"
+        className={recording ? 'recording' : ''}
+        onClick={recording ? stop : start}
+        data-ui-click="off"
+      >
+        {recording ? <AudioLines size={18} /> : <Mic2 size={18} />}
+        {recording ? 'Остановить запись' : previewUrl ? 'Записать ещё раз' : 'Записать голос'}
+      </button>
+      {previewUrl && <audio controls src={previewUrl} preload="metadata" />}
+      {!recording && !previewUrl && (
+        <button type="button" className="voice-practice-skip" onClick={() => onDone?.()}>
+          {done ? <><Check size={15} /> Выполнено</> : 'Я произнёс вслух'}
+        </button>
+      )}
+      {error && <small>{error}</small>}
+    </div>
+  );
+}
+
+function SpecTaskScreen({
+  screen,
+  voicePreset,
+  answers,
+  setAnswer,
+  ordered,
+  setOrder,
+  repeated,
+  setRepeated,
+  spoken,
+  setSpoken,
+  confirmation,
+}) {
+  const audioUrls = getScreenAudioSequence(screen, voicePreset);
+  const expectedAudioCount = Array.isArray(screen?.resolvedAudioSequence)
+    ? screen.resolvedAudioSequence.length
+    : Array.isArray(screen?.audioPhrases) ? screen.audioPhrases.length : (screen?.audioPhrase ? 1 : 0);
+  const missingAudioCount = Math.max(0, expectedAudioCount - audioUrls.length);
+  const questions = inferSpecQuestions(screen);
+  const pairs = inferSpecPairs(screen);
+  const inferredOrder = inferSpecOrder(screen);
+  const sourceMode = screen.mode || 'info';
+  const lacksNativeStructure =
+    (['match', 'classify'].includes(sourceMode) && !pairs.length) ||
+    (sourceMode === 'order' && !inferredOrder.tokens.length);
+  const mode = questions.length && (['info', 'dialog', 'text'].includes(sourceMode) || lacksNativeStructure)
+    ? 'choice'
+    : !questions.length && pairs.length && ['reading', 'listening'].includes(sourceMode)
+      ? 'shortAnswer'
+      : sourceMode;
+  const displayLines = (mode === 'info' || mode === 'study' || mode === 'dialog' || mode === 'speaking' || mode === 'text')
+    ? (screen.body || screen.lead || [])
+    : (screen.lead || []);
+  const locked = confirmation.status === 'correct';
+
+  const renderLines = lines => (
+    <div className="spec-copy">
+      {(lines || []).slice(0, mode === 'info' ? 28 : 16).map((line, index) => (
+        <p key={index}>{line}</p>
+      ))}
+    </div>
+  );
+
+  if (mode === 'study') {
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.focus || screen.title}</h1>
+        {screen.title !== screen.focus && <h2 className="spec-subtitle">{screen.title}</h2>}
+        <LessonAudioSequenceButton urls={audioUrls} large label="Послушать" />
+        {renderLines(displayLines)}
+        {missingAudioCount > 0 && (
+          <div className="spec-audio-missing">
+            Аудио готово не полностью: {audioUrls.length} из {expectedAudioCount}. Недостающие записи добавь в аудиословарь.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (['choice', 'listening', 'reading'].includes(mode) && questions.length) {
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        {mode === 'listening' && (
+          <>
+            <LessonAudioSequenceButton urls={audioUrls} large label={audioUrls.length > 1 ? 'Послушать последовательность' : 'Послушать'} />
+            {missingAudioCount > 0 && (
+              <div className="spec-audio-missing">
+                Для выбранного голоса готово {audioUrls.length} из {expectedAudioCount} аудиофрагментов.
+              </div>
+            )}
+          </>
+        )}
+        {mode === 'reading' && renderLines(getSpecQuestionContext(screen))}
+        {mode === 'choice' && screen.resolvedImageUrl && <SceneArt imageUrl={screen.resolvedImageUrl} compact />}
+        <div className="lesson-multi-stack">
+          {questions.map((item, index) => (
+            <div className="lesson-multi-item" key={index}>
+              <strong>{item.prompt || `Вопрос ${index + 1}`}</strong>
+              {Array.isArray(item.answers) && item.answers.length > 1 ? (
+                <MultiSelectOptions
+                  options={item.options || []}
+                  answers={item.answers}
+                  selected={answers[index]}
+                  onSelect={value => setAnswer(index, value)}
+                  confirmed={confirmation.status !== 'idle'}
+                  locked={locked}
+                />
+              ) : (
+                <ChoiceOptions
+                  options={item.options || []}
+                  answer={item.answer}
+                  selected={answers[index]}
+                  onSelect={value => setAnswer(index, value)}
+                  confirmed={confirmation.status !== 'idle'}
+                  locked={locked}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+        {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Всё верно!</p>}
+        {confirmation.status === 'wrong' && <p className="lesson-feedback error">Есть ошибка. Исправь ответ и попробуй ещё раз.</p>}
+      </div>
+    );
+  }
+
+  if (['match', 'classify'].includes(mode) && pairs.length) {
+    const choices = [...new Set(pairs.map(pair => pair.slice(1).join(' → ')))];
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        {renderLines(screen.lead || [])}
+        <div className="spec-pairs">
+          {pairs.map((pair, index) => {
+            const correct = pair.slice(1).join(' → ');
+            const selected = answers[index] || '';
+            const state = confirmation.status === 'idle' ? '' : selected === correct ? 'correct' : 'wrong';
+            return (
+              <div className={`spec-pair-row ${state}`} key={`${pair[0]}-${index}`}>
+                <strong>{pair[0]}</strong>
+                <span>→</span>
+                <select value={selected} onChange={event => !locked && setAnswer(index, event.target.value)} disabled={locked}>
+                  <option value="">Выбери…</option>
+                  {choices.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'order' && inferredOrder.tokens.length && inferredOrder.answer.length) {
+    const remaining = inferredOrder.tokens.filter((token, index) => {
+      const selectedCount = ordered.filter(x => x === token).length;
+      const before = inferredOrder.tokens.slice(0, index + 1).filter(x => x === token).length;
+      return selectedCount < before;
+    });
+
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} label="Послушать" />
+        <div className={`sentence-builder ${confirmation.status === 'correct' ? 'confirmed-correct' : confirmation.status === 'wrong' ? 'confirmed-wrong' : ''}`}>
+          <div className="sentence-built">
+            {ordered.length
+              ? ordered.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => current.filter((_, i) => i !== index))}>{token}</button>)
+              : <span>Нажимай на элементы по порядку</span>}
+          </div>
+          <div className="sentence-tokens">
+            {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'shortAnswer') {
+    const context = getSpecQuestionContext(screen);
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        {sourceMode === 'listening' && (
+          <LessonAudioSequenceButton urls={audioUrls} large label="Послушать" />
+        )}
+        {context.length > 0 && renderLines(context)}
+        <div className="spec-short-answers">
+          {pairs.map((pair, index) => (
+            <label key={`${pair[0]}-${index}`}>
+              <span>{pair[0]}</span>
+              <input
+                value={answers[index] || ''}
+                onChange={event => setAnswer(index, event.target.value)}
+                disabled={locked}
+                placeholder="Ответ…"
+              />
+              {confirmation.status === 'correct' && <Check size={16} />}
+            </label>
+          ))}
+        </div>
+        {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Всё верно!</p>}
+        {confirmation.status === 'wrong' && <p className="lesson-feedback error">Проверь ответы и попробуй ещё раз.</p>}
+      </div>
+    );
+  }
+
+  if (mode === 'dialog') {
+    const lines = screen.body || screen.lead || [];
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} large label="Послушать диалог" />
+        <div className="spec-dialogue">
+          {lines.slice(0, 30).map((line, index) => {
+            const match = String(line).match(/^([AB]):\s*(.*)$/);
+            if (match) {
+              return <div className={`spec-dialogue-line speaker-${match[1].toLowerCase()}`} key={index}><span>{match[1]}</span><p>{match[2]}</p></div>;
+            }
+            return <p className="spec-dialogue-note" key={index}>{line}</p>;
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'speaking') {
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} label="Послушать образец" />
+        {renderLines(screen.lead || [])}
+        <VoicePracticeRecorder
+          done={Boolean(spoken[0])}
+          onDone={() => setSpoken(prev => ({ ...prev, 0: true }))}
+        />
+        {spoken[0] && screen.expected?.length > 0 && (
+          <div className="spec-expected">
+            <span>Возможный вариант</span>
+            {screen.expected.map((item, index) => <strong key={index}>{item}</strong>)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'text') {
+    const expectedText = inferSpecExpectedText(screen);
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} large label="Послушать" />
+        {renderLines(screen.lead || [])}
+        <textarea
+          className="spec-text-answer"
+          value={answers.text || ''}
+          onChange={event => setAnswer('text', event.target.value)}
+          placeholder="Напиши свой ответ…"
+          rows={4}
+        />
+        {expectedText && confirmation.status === 'correct' && (
+          <p className="lesson-feedback success"><Check size={15} /> Верно: {expectedText}</p>
+        )}
+        {expectedText && confirmation.status === 'wrong' && (
+          <p className="lesson-feedback error">Проверь написание и попробуй ещё раз.</p>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="lesson-task spec-task">
+      <span className="lesson-eyebrow">{screen.eyebrow}</span>
+      <h1>{screen.title}</h1>
+      <LessonAudioSequenceButton urls={audioUrls} label="Послушать" />
+      {renderLines(displayLines)}
+    </div>
+  );
+}
+
 function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const screens = lesson.content?.screens || [];
   const [step, setStep] = useState(0);
@@ -848,6 +1470,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [spoken, setSpoken] = useState({});
   const [finished, setFinished] = useState(false);
   const [confirmation, setConfirmation] = useState({ status: 'idle' });
+  const [sessionStats, setSessionStats] = useState({ correctChecks: 0, wrongAttempts: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const lessonRunnerRef = useRef(null);
   const completionSoundPlayedRef = useRef(false);
@@ -924,7 +1547,27 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   if (!screen) return null;
 
-  const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type);
+  const specQuestions = screen.type === 'specTask' ? inferSpecQuestions(screen) : [];
+  const specPairs = screen.type === 'specTask' ? inferSpecPairs(screen) : [];
+  const specOrder = screen.type === 'specTask' ? inferSpecOrder(screen) : { tokens: [], answer: [] };
+  const specSourceMode = screen.type === 'specTask' ? (screen.mode || 'info') : '';
+  const specLacksNativeStructure =
+    (['match', 'classify'].includes(specSourceMode) && !specPairs.length) ||
+    (specSourceMode === 'order' && !specOrder.tokens.length);
+  const specMode = specQuestions.length && (['info', 'dialog', 'text'].includes(specSourceMode) || specLacksNativeStructure)
+    ? 'choice'
+    : !specQuestions.length && specPairs.length && ['reading', 'listening'].includes(specSourceMode)
+      ? 'shortAnswer'
+      : specSourceMode;
+  const specExpectedText = screen.type === 'specTask' && specMode === 'text' ? inferSpecExpectedText(screen) : '';
+  const specCheckable = screen.type === 'specTask' && (
+    (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length > 0) ||
+    (['match', 'classify'].includes(specMode) && specPairs.length > 0) ||
+    (specMode === 'order' && specOrder.tokens.length > 0 && specOrder.answer.length > 0) ||
+    (specMode === 'shortAnswer' && specPairs.length > 0) ||
+    (specMode === 'text' && Boolean(specExpectedText))
+  );
+  const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type) || specCheckable;
 
   const clearConfirmation = () => {
     if (confirmation.status !== 'idle') setConfirmation({ status: 'idle' });
@@ -940,14 +1583,35 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     setOrdered(updater);
   };
 
-  const allMultiAnswered = items => items.every((_, index) => answers[index] !== undefined && answers[index] !== null && answers[index] !== '');
-  const allMultiCorrect = items => items.every((item, index) => answers[index] === item.answer);
+  const allMultiAnswered = items => items.every((item, index) => {
+    const value = answers[index];
+    if (Array.isArray(item.answers) && item.answers.length > 1) {
+      return Array.isArray(value) && value.length === item.answers.length;
+    }
+    return value !== undefined && value !== null && value !== '';
+  });
+  const allMultiCorrect = items => items.every((item, index) => {
+    const value = answers[index];
+    if (Array.isArray(item.answers) && item.answers.length > 1) {
+      if (!Array.isArray(value) || value.length !== item.answers.length) return false;
+      const expected = new Set(item.answers);
+      return value.every(option => expected.has(option));
+    }
+    return value === item.answer;
+  });
 
   const selectionReady = (() => {
     if (screen.type === 'choice' || screen.type === 'listeningChoice') return Boolean(answers.single);
     if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') return allMultiAnswered(screen.items || []);
     if (screen.type === 'classify') return allMultiAnswered(screen.items || []);
     if (screen.type === 'order') return ordered.length === (screen.answer || []).length;
+    if (screen.type === 'specTask') {
+      if (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length) return allMultiAnswered(specQuestions);
+      if (['match', 'classify'].includes(specMode) && specPairs.length) return specPairs.every((_, index) => Boolean(answers[index]));
+      if (specMode === 'order') return ordered.length === specOrder.answer.length;
+      if (specMode === 'shortAnswer') return specPairs.every((_, index) => Boolean(String(answers[index] || '').trim()));
+      if (specMode === 'text' && specExpectedText) return Boolean(String(answers.text || '').trim());
+    }
     return true;
   })();
 
@@ -956,6 +1620,21 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') return allMultiCorrect(screen.items || []);
     if (screen.type === 'classify') return (screen.items || []).every((item, index) => answers[index] === item.answer);
     if (screen.type === 'order') return ordered.join(' ') === (screen.answer || []).join(' ');
+    if (screen.type === 'specTask') {
+      if (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length) return allMultiCorrect(specQuestions);
+      if (['match', 'classify'].includes(specMode) && specPairs.length) {
+        return specPairs.every((pair, index) => answers[index] === pair.slice(1).join(' → '));
+      }
+      if (specMode === 'order') return ordered.join(' | ') === specOrder.answer.join(' | ');
+      if (specMode === 'shortAnswer') {
+        return specPairs.every((pair, index) =>
+          normalizeAnswerText(answers[index]) === normalizeAnswerText(pair.slice(1).join(' → '))
+        );
+      }
+      if (specMode === 'text' && specExpectedText) {
+        return normalizeAnswerText(answers.text) === normalizeAnswerText(specExpectedText);
+      }
+    }
     return true;
   })();
 
@@ -964,6 +1643,8 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (['intro', 'flashcard'].includes(screen.type)) return true;
     if (screen.type === 'pronunciation') return (screen.phrases || []).every((_, index) => repeated[index]);
     if (screen.type === 'speakingFinal') return (screen.items || []).every((_, index) => spoken[index]);
+    if (screen.type === 'specTask' && specMode === 'speaking') return Boolean(spoken[0]);
+    if (screen.type === 'specTask' && specMode === 'text' && !specExpectedText) return Boolean(String(answers.text || '').trim());
     return true;
   })();
 
@@ -972,9 +1653,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
     if (answerIsCorrect) {
       setConfirmation({ status: 'correct' });
+      setSessionStats(current => ({ ...current, correctChecks: current.correctChecks + 1 }));
       playUiSound('success');
     } else {
       setConfirmation({ status: 'wrong' });
+      setSessionStats(current => ({ ...current, wrongAttempts: current.wrongAttempts + 1 }));
       playUiSound('error');
     }
   };
@@ -1040,6 +1723,13 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
               <div key={item} style={{ '--outcome-index': index }}><Check size={15} />{item}</div>
             ))}
           </div>
+          {(sessionStats.correctChecks > 0 || sessionStats.wrongAttempts > 0) && (
+            <div className="lesson-session-stats">
+              <div><strong>{sessionStats.correctChecks}</strong><span>проверенных заданий</span></div>
+              <div><strong>{sessionStats.wrongAttempts}</strong><span>ошибочных попыток</span></div>
+              <div><strong>{sessionStats.wrongAttempts === 0 ? '✓' : '↻'}</strong><span>{sessionStats.wrongAttempts === 0 ? 'без ошибок' : 'ошибки отработаны'}</span></div>
+            </div>
+          )}
           <button className="lesson-primary-action lesson-finish-action" onClick={exitLesson}>
             Вернуться к урокам <ArrowRight size={17} />
           </button>
@@ -1049,6 +1739,24 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   }
 
   const renderScreen = () => {
+    if (screen.type === 'specTask') {
+      return (
+        <SpecTaskScreen
+          screen={screen}
+          voicePreset={voicePreset}
+          answers={answers}
+          setAnswer={setAnswer}
+          ordered={ordered}
+          setOrder={setOrder}
+          repeated={repeated}
+          setRepeated={setRepeated}
+          spoken={spoken}
+          setSpoken={setSpoken}
+          confirmation={confirmation}
+        />
+      );
+    }
+
     if (screen.type === 'intro') {
       return (
         <div className="lesson-intro-layout">
@@ -1217,7 +1925,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             {screen.phrases.map((phrase, index) => (
               <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
                 <strong>{phrase}</strong>
-                <button onClick={() => setRepeated(prev => ({ ...prev, [index]: true }))}><Mic2 size={18} /> Повторил{repeated[index] && <Check size={15} />}</button>
+                <VoicePracticeRecorder
+                  compact
+                  done={Boolean(repeated[index])}
+                  onDone={() => setRepeated(prev => ({ ...prev, [index]: true }))}
+                />
               </div>
             ))}
           </div>
@@ -1240,7 +1952,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
                   <strong>{item.prompt}</strong>
                   {spoken[index] && <p>{item.answers.join(' / ')}</p>}
                 </div>
-                <button onClick={() => setSpoken(prev => ({ ...prev, [index]: true }))}><Mic2 size={17} /> {spoken[index] ? 'Готово' : 'Сказал вслух'}</button>
+                <VoicePracticeRecorder
+                  compact
+                  done={Boolean(spoken[index])}
+                  onDone={() => setSpoken(prev => ({ ...prev, [index]: true }))}
+                />
               </div>
             ))}
           </div>
@@ -1253,11 +1969,15 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   const lessonPercent = Math.round(((step + 1) / screens.length) * 100);
   const itemCount = Array.isArray(screen.items) ? screen.items.length : 0;
+  const specDensity = screen.type === 'specTask'
+    ? Math.max((screen.questions || []).length, (screen.pairs || []).length, (screen.body || []).length)
+    : 0;
   const isDenseScreen =
     (['multiChoice', 'listeningDialog'].includes(screen.type) && itemCount >= 4) ||
     (screen.type === 'classify' && itemCount >= 5) ||
     (screen.type === 'pronunciation' && (screen.phrases || []).length >= 5) ||
-    (screen.type === 'speakingFinal' && itemCount >= 4);
+    (screen.type === 'speakingFinal' && itemCount >= 4) ||
+    (screen.type === 'specTask' && specDensity >= 8);
 
   return (
     <section className="lesson-runner" ref={lessonRunnerRef}>
