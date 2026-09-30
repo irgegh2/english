@@ -371,7 +371,11 @@ app.patch('/api/admin/audio-dictionary/:id', async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid audio phrase id' });
 
   try {
+    const current = await prisma.audioPhrase.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ error: 'Audio phrase not found' });
+
     const data = {};
+    let renamedPhrase = null;
 
     if ('text' in req.body) {
       const text = asString(req.body.text).trim();
@@ -385,13 +389,42 @@ app.patch('/api/admin/audio-dictionary/:id', async (req, res) => {
 
       data.text = text;
       data.key = key;
+      if (key !== current.key) renamedPhrase = { text, oldKey: current.key };
     }
 
     if ('audioFiles' in req.body) {
       data.audioFiles = sanitizeAudioFiles(req.body.audioFiles);
     }
 
-    const entry = await prisma.audioPhrase.update({ where: { id }, data });
+    const lessonUpdates = [];
+    if (renamedPhrase) {
+      const lessons = await prisma.lesson.findMany({ select: { id: true, content: true } });
+      for (const lesson of lessons) {
+        const content = lesson.content;
+        if (!content || typeof content !== 'object' || !Array.isArray(content.screens)) continue;
+
+        let changed = false;
+        const screens = content.screens.map(screen => {
+          if (normalizeAudioPhrase(screen?.audioPhrase) !== renamedPhrase.oldKey) return screen;
+          changed = true;
+          return { ...screen, audioPhrase: renamedPhrase.text };
+        });
+
+        if (changed) lessonUpdates.push({ id: lesson.id, content: { ...content, screens } });
+      }
+    }
+
+    const entry = await prisma.$transaction(async tx => {
+      const updated = await tx.audioPhrase.update({ where: { id }, data });
+      for (const lesson of lessonUpdates) {
+        await tx.lesson.update({
+          where: { id: lesson.id },
+          data: { content: lesson.content },
+        });
+      }
+      return updated;
+    });
+
     res.json(entry);
   } catch (error) {
     res.status(400).json({ error: error.message });
