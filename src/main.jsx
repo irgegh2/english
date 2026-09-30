@@ -468,7 +468,7 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 
 let activeLessonAudio = null;
 
-const UI_SOUND_VERSION = '20260930-5';
+const UI_SOUND_VERSION = '20260930-6';
 const UI_SOUNDS = {
   click: { url: `/assets/sounds/mclick.mp3?v=${UI_SOUND_VERSION}`, volume: 0.42 },
   success: { url: `/assets/sounds/success.mp3?v=${UI_SOUND_VERSION}`, volume: 0.72 },
@@ -476,93 +476,132 @@ const UI_SOUNDS = {
   end: { url: END_SOUND_DATA_URL, volume: 0.86 },
 };
 
-const uiAudioPools = new Map();
-let uiSoundsPrimed = false;
+let uiAudioContext = null;
+const uiSoundBuffers = new Map();
+const uiSoundLoading = new Map();
+const uiAudioFallback = new Map();
 
-function createUiAudio(config) {
+function getUiAudioContext() {
+  if (typeof window === 'undefined') return null;
+  if (uiAudioContext) return uiAudioContext;
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+
+  try {
+    uiAudioContext = new AudioContextCtor({ latencyHint: 'interactive' });
+  } catch {
+    try { uiAudioContext = new AudioContextCtor(); } catch { uiAudioContext = null; }
+  }
+  return uiAudioContext;
+}
+
+function getFallbackAudio(name) {
+  if (typeof window === 'undefined') return null;
+  if (uiAudioFallback.has(name)) return uiAudioFallback.get(name);
+
+  const config = UI_SOUNDS[name];
+  if (!config) return null;
+
   const audio = new Audio();
   audio.preload = 'auto';
   audio.src = config.url;
   audio.volume = config.volume;
   audio.load();
+  uiAudioFallback.set(name, audio);
   return audio;
 }
 
-function getUiSoundPool(name) {
-  if (typeof window === 'undefined') return [];
-  if (uiAudioPools.has(name)) return uiAudioPools.get(name);
+async function loadUiSoundBuffer(name) {
+  if (uiSoundBuffers.has(name)) return uiSoundBuffers.get(name);
+  if (uiSoundLoading.has(name)) return uiSoundLoading.get(name);
 
   const config = UI_SOUNDS[name];
-  if (!config) return [];
+  const context = getUiAudioContext();
+  if (!config || !context || typeof fetch === 'undefined') return null;
 
-  const size = name === 'click' ? 6 : 3;
-  const pool = Array.from({ length: size }, () => createUiAudio(config));
-  uiAudioPools.set(name, pool);
-  return pool;
+  const loading = fetch(config.url, { cache: 'force-cache' })
+    .then(response => {
+      if (!response.ok) throw new Error(`Failed to preload UI sound: ${name}`);
+      return response.arrayBuffer();
+    })
+    .then(buffer => context.decodeAudioData(buffer.slice(0)))
+    .then(decoded => {
+      uiSoundBuffers.set(name, decoded);
+      uiSoundLoading.delete(name);
+      return decoded;
+    })
+    .catch(error => {
+      uiSoundLoading.delete(name);
+      console.warn(`UI sound preload ${name} failed:`, error);
+      return null;
+    });
+
+  uiSoundLoading.set(name, loading);
+  return loading;
 }
 
-function playUiSound(name) {
+function playUiSoundFallback(name) {
   const config = UI_SOUNDS[name];
-  if (!config || typeof window === 'undefined') return false;
-
-  const pool = getUiSoundPool(name);
-  const audio = pool.find(item => item.paused || item.ended) || pool[0];
-  if (!audio) return false;
+  const audio = getFallbackAudio(name);
+  if (!config || !audio) return false;
 
   try {
     audio.pause();
     audio.currentTime = 0;
     audio.volume = config.volume;
     const promise = audio.play();
-    if (promise?.catch) promise.catch(error => console.warn(`UI sound ${name} failed:`, error));
+    if (promise?.catch) promise.catch(() => {});
     return true;
-  } catch (error) {
-    console.warn(`UI sound ${name} failed:`, error);
+  } catch {
     return false;
   }
 }
 
-function primeUiSounds() {
-  if (uiSoundsPrimed || typeof window === 'undefined') return;
-  uiSoundsPrimed = true;
+function playUiSound(name) {
+  const config = UI_SOUNDS[name];
+  if (!config || typeof window === 'undefined') return false;
 
-  Object.values(UI_SOUNDS).forEach(config => {
+  const context = getUiAudioContext();
+  const buffer = uiSoundBuffers.get(name);
+
+  if (!context || !buffer) {
+    if (!uiSoundLoading.has(name)) void loadUiSoundBuffer(name);
+    return playUiSoundFallback(name);
+  }
+
+  const start = () => {
     try {
-      const warmup = new Audio();
-      warmup.preload = 'auto';
-      warmup.src = config.url;
-      warmup.muted = true;
-      warmup.volume = 0;
-      warmup.load();
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      source.buffer = buffer;
+      gain.gain.value = config.volume;
+      source.connect(gain);
+      gain.connect(context.destination);
+      source.start(0);
+      return true;
+    } catch (error) {
+      console.warn(`UI sound ${name} failed:`, error);
+      return playUiSoundFallback(name);
+    }
+  };
 
-      const stop = () => {
-        try {
-          warmup.pause();
-          warmup.currentTime = 0;
-          warmup.src = '';
-          warmup.load();
-        } catch {}
-      };
+  if (context.state === 'suspended') {
+    context.resume().then(start).catch(() => playUiSoundFallback(name));
+    return true;
+  }
 
-      const promise = warmup.play();
-      if (promise?.then) {
-        promise.then(() => window.setTimeout(stop, 45)).catch(() => {});
-      }
-    } catch {}
-  });
+  return start();
 }
 
 function preloadUiSounds() {
   if (typeof window === 'undefined') return;
-  Object.keys(UI_SOUNDS).forEach(name => {
-    getUiSoundPool(name).forEach(audio => {
-      if (audio.readyState < 3) {
-        try { audio.load(); } catch {}
-      }
-    });
-  });
 
-  window.setTimeout(primeUiSounds, 0);
+  getUiAudioContext();
+  Object.keys(UI_SOUNDS).forEach(name => {
+    void loadUiSoundBuffer(name);
+    getFallbackAudio(name);
+  });
 }
 
 function installUiAudioLifecycle() {
@@ -570,7 +609,10 @@ function installUiAudioLifecycle() {
   window.__skladnoAudioLifecycleInstalled = true;
 
   const restore = () => {
-    if (document.visibilityState === 'visible') preloadUiSounds();
+    if (document.visibilityState !== 'visible') return;
+    preloadUiSounds();
+    const context = getUiAudioContext();
+    if (context?.state === 'suspended') context.resume().catch(() => {});
   };
 
   document.addEventListener('visibilitychange', restore);
@@ -584,11 +626,13 @@ function installGlobalClickSound() {
 
   document.addEventListener('pointerdown', event => {
     if (event.button !== undefined && event.button !== 0) return;
-    primeUiSounds();
     const target = event.target instanceof Element ? event.target : null;
-    const control = target?.closest('button, a, [role="button"], label.admin-upload-btn');
+    const control = target?.closest('button, a, [role="button"], label.admin-upload-btn, label.admin-media-library-upload');
     if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true') return;
     if (control.dataset.uiClick === 'off' || control.closest('[data-ui-click="off"]')) return;
+
+    const context = getUiAudioContext();
+    if (context?.state === 'suspended') context.resume().catch(() => {});
     playUiSound('click');
   }, { capture: true, passive: true });
 }
@@ -986,7 +1030,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             <LessonAudioButton url={screenAudio} />
             <div className="lesson-chip-row">{screen.chips?.map(chip => <span key={chip}>{chip}</span>)}</div>
           </div>
-          <SceneArt type="meeting" imageUrl={screen.imageUrl} />
+          <SceneArt type="meeting" imageUrl={screen.resolvedImageUrl || screen.imageUrl} />
         </div>
       );
     }
@@ -994,7 +1038,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (screen.type === 'flashcard') {
       return (
         <div className="lesson-flash-layout">
-          <SceneArt type={screen.scene} imageUrl={screen.imageUrl} />
+          <SceneArt type={screen.scene} imageUrl={screen.resolvedImageUrl || screen.imageUrl} />
           <div className="lesson-flash-copy">
             <span className="lesson-eyebrow">{screen.eyebrow}</span>
             <h1>{screen.phrase}</h1>
