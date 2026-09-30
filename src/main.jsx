@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import './styles.css';
 import { ASSETS } from './assets.js';
+import AdminApp from './admin.jsx';
 
 const fallbackLessons = [
   { id: 1, position: 1, title: 'Как строить фразы', tagPrimary: 'грамматика', tagSecondary: 'говорение', description: 'Учимся собирать простые и естественные фразы для повседневного общения.', progress: 100, duration: 18, imageKey: 'lesson-1.webp' },
@@ -67,12 +68,12 @@ const dictionary = [
 ];
 
 const VOICE_PRESETS = [
-  { id: 'ella', name: 'Ella', gender: 'Женский', note: 'мягкий · спокойный', voiceIndex: 0, rate: .88, pitch: 1.05 },
-  { id: 'grace', name: 'Grace', gender: 'Женский', note: 'ясный · нейтральный', voiceIndex: 1, rate: .92, pitch: 1.1 },
-  { id: 'chloe', name: 'Chloe', gender: 'Женский', note: 'живой · энергичный', voiceIndex: 2, rate: .96, pitch: 1.16 },
-  { id: 'oliver', name: 'Oliver', gender: 'Мужской', note: 'спокойный · низкий', voiceIndex: 3, rate: .86, pitch: .9 },
-  { id: 'james', name: 'James', gender: 'Мужской', note: 'нейтральный · чёткий', voiceIndex: 4, rate: .9, pitch: .96 },
-  { id: 'theo', name: 'Theo', gender: 'Мужской', note: 'быстрый · разговорный', voiceIndex: 5, rate: .96, pitch: 1 },
+  { id: 'ella', name: 'Ella', gender: 'Женский', note: 'мягкий · спокойный' },
+  { id: 'grace', name: 'Grace', gender: 'Женский', note: 'ясный · нейтральный' },
+  { id: 'chloe', name: 'Chloe', gender: 'Женский', note: 'живой · энергичный' },
+  { id: 'oliver', name: 'Oliver', gender: 'Мужской', note: 'спокойный · низкий' },
+  { id: 'james', name: 'James', gender: 'Мужской', note: 'нейтральный · чёткий' },
+  { id: 'theo', name: 'Theo', gender: 'Мужской', note: 'быстрый · разговорный' },
 ];
 
 function getVoicePreset(id) {
@@ -276,7 +277,7 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange 
 
             <div className="voice-settings-note">
               <AudioLines size={18} />
-              <div><strong>Сейчас используется демо-озвучка браузера.</strong><span>Когда загрузим твои аудиофайлы, эти же 6 профилей будут переключать реальные записи.</span></div>
+              <div><strong>Озвучка берётся только из загруженных аудиофайлов.</strong><span>Для каждого задания в админке можно загрузить отдельный файл для каждого из шести голосов. Если файла нет — звук не запускается.</span></div>
             </div>
 
             <div className="voice-groups">
@@ -291,9 +292,9 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange 
                           <span className="voice-copy"><strong>{voice.name}</strong><small>{voice.note}</small></span>
                           <span className="voice-radio">{voice.id === voicePreset && <Check size={13} />}</span>
                         </button>
-                        <button className="voice-preview" onClick={() => speakEnglish('Hello. Nice to meet you.', voice.id)} aria-label={`Прослушать голос ${voice.name}`}>
-                          <Volume2 size={16} /> Послушать
-                        </button>
+                        <div className="voice-preview voice-preview-static">
+                          <Volume2 size={16} /> Аудио задаётся в уроках
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -303,7 +304,10 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange 
 
             <div className="settings-footer">
               <span>Выбран голос: <strong>{selectedVoice.name}</strong></span>
-              <button onClick={() => setSettingsOpen(false)}>Готово</button>
+              <div className="settings-footer-actions">
+                <button className="settings-admin-link" onClick={() => { window.location.href = '/admin'; }}>Админка курса</button>
+                <button onClick={() => setSettingsOpen(false)}>Готово</button>
+              </div>
             </div>
           </section>
         </div>
@@ -450,26 +454,44 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 }
 
 
-function speakEnglish(text, presetId = 'ella') {
-  if (typeof window === 'undefined' || !window.speechSynthesis || !text) return;
+let activeLessonAudio = null;
 
-  const preset = getVoicePreset(presetId);
-  const utterance = new SpeechSynthesisUtterance(text);
-  const voices = window.speechSynthesis.getVoices();
-  const british = voices.filter(voice => /^en-GB/i.test(voice.lang));
-  const english = voices.filter(voice => /^en/i.test(voice.lang));
-  const pool = british.length ? british : english;
-
-  if (pool.length) utterance.voice = pool[preset.voiceIndex % pool.length];
-  utterance.lang = utterance.voice?.lang || 'en-GB';
-  utterance.rate = preset.rate;
-  utterance.pitch = preset.pitch;
-
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
+function getScreenAudio(screen, presetId) {
+  return screen?.audioFiles?.[presetId] || '';
 }
 
-function SceneArt({ type = 'meeting', compact = false }) {
+function playLessonAudio(url) {
+  if (!url || typeof window === 'undefined') return false;
+
+  if (activeLessonAudio) {
+    activeLessonAudio.pause();
+    activeLessonAudio.currentTime = 0;
+  }
+
+  const audio = new Audio(url);
+  activeLessonAudio = audio;
+  audio.addEventListener('ended', () => {
+    if (activeLessonAudio === audio) activeLessonAudio = null;
+  }, { once: true });
+  audio.play().catch(() => {});
+  return true;
+}
+
+function LessonAudioButton({ url, large = false, label = 'Послушать' }) {
+  return (
+    <button
+      className={large ? 'lesson-listen-big' : 'lesson-audio-btn'}
+      onClick={() => playLessonAudio(url)}
+      disabled={!url}
+      title={url ? label : 'Аудио для выбранного голоса пока не загружено'}
+    >
+      <Volume2 size={large ? 28 : 20} />
+      <span>{url ? label : 'Аудио не загружено'}</span>
+    </button>
+  );
+}
+
+function SceneArt({ type = 'meeting', compact = false, imageUrl = '' }) {
   const captions = {
     meeting: 'Фото: встреча',
     casual: 'Фото: неформальная встреча',
@@ -480,12 +502,18 @@ function SceneArt({ type = 'meeting', compact = false }) {
   };
 
   return (
-    <div className={`lesson-photo-slot photo-${type} ${compact ? 'compact' : ''}`} aria-label={captions[type] || 'Место для фото'}>
-      <div className="photo-placeholder-mark"><Camera size={compact ? 18 : 28} /></div>
-      <div className="photo-placeholder-copy">
-        <strong>Фото 1:1</strong>
-        <span>{captions[type] || 'Сюда загрузим фотографию'}</span>
-      </div>
+    <div className={`lesson-photo-slot photo-${type} ${compact ? 'compact' : ''} ${imageUrl ? 'has-image' : ''}`} aria-label={captions[type] || 'Место для фото'}>
+      {imageUrl ? (
+        <img src={imageUrl} alt="" />
+      ) : (
+        <>
+          <div className="photo-placeholder-mark"><Camera size={compact ? 18 : 28} /></div>
+          <div className="photo-placeholder-copy">
+            <strong>Фото 1:1</strong>
+            <span>{captions[type] || 'Сюда загрузим фотографию'}</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -607,6 +635,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [finished, setFinished] = useState(false);
 
   const screen = screens[step];
+  const screenAudio = getScreenAudio(screen, voicePreset);
 
   useEffect(() => {
     setAnswers({});
@@ -668,9 +697,10 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             <span className="lesson-eyebrow">{screen.eyebrow}</span>
             <h1>{screen.title}</h1>
             <p>{screen.body}</p>
+            {screenAudio && <LessonAudioButton url={screenAudio} />}
             <div className="lesson-chip-row">{screen.chips?.map(chip => <span key={chip}>{chip}</span>)}</div>
           </div>
-          <SceneArt type="meeting" />
+          <SceneArt type="meeting" imageUrl={screen.imageUrl} />
         </div>
       );
     }
@@ -678,14 +708,12 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (screen.type === 'flashcard') {
       return (
         <div className="lesson-flash-layout">
-          <SceneArt type={screen.scene} />
+          <SceneArt type={screen.scene} imageUrl={screen.imageUrl} />
           <div className="lesson-flash-copy">
             <span className="lesson-eyebrow">{screen.eyebrow}</span>
             <h1>{screen.phrase}</h1>
             <p className="lesson-translation">{screen.translation}</p>
-            <button className="lesson-audio-btn" onClick={() => speakEnglish(screen.audio || screen.phrase, voicePreset)}>
-              <Volume2 size={20} /> Послушать
-            </button>
+            <LessonAudioButton url={screenAudio} />
             <div className="lesson-context-note">{screen.sceneText}</div>
             {screen.reply && (
               <div className="lesson-reply">
@@ -706,11 +734,12 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           {screen.type === 'listeningChoice' ? (
-            <button className="lesson-listen-big" onClick={() => speakEnglish(screen.audio, voicePreset)}>
-              <Volume2 size={28} /><span>Воспроизвести</span>
-            </button>
+            <LessonAudioButton url={screenAudio} large label="Воспроизвести" />
           ) : (
-            <div className="lesson-question-word">{screen.prompt}</div>
+            <>
+              <div className="lesson-question-word">{screen.prompt}</div>
+              {screenAudio && <LessonAudioButton url={screenAudio} />}
+            </>
           )}
           <ChoiceOptions options={screen.options} answer={screen.answer} selected={answers.single} onSelect={value => setAnswer('single', value)} />
           {answers.single && <p className={answers.single === screen.answer ? 'lesson-feedback success' : 'lesson-feedback error'}>{answers.single === screen.answer ? 'Верно.' : 'Попробуй ещё раз.'}</p>}
@@ -724,15 +753,13 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-task">
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
-          {screen.type === 'listeningDialog' && (
-            <button className="lesson-listen-big" onClick={() => speakEnglish((screen.audioLines || []).join(' ... '), voicePreset)}>
-              <Volume2 size={28} /><span>Послушать диалог</span>
-            </button>
-          )}
+          {screen.type === 'listeningDialog'
+            ? <LessonAudioButton url={screenAudio} large label="Послушать диалог" />
+            : screenAudio && <LessonAudioButton url={screenAudio} />}
           <div className="lesson-multi-stack">
             {(screen.items || []).map((item, index) => (
               <div className="lesson-multi-item" key={index}>
-                {item.scene && <SceneArt type={item.scene} compact />}
+                {item.scene && <SceneArt type={item.scene} compact imageUrl={item.imageUrl || ''} />}
                 <strong>{item.prompt}</strong>
                 <ChoiceOptions options={item.options} answer={item.answer} selected={answers[index]} onSelect={value => setAnswer(index, value)} />
               </div>
@@ -747,6 +774,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-task">
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
+          {screenAudio && <LessonAudioButton url={screenAudio} />}
           <div className="classify-list">
             {screen.items.map((item, index) => (
               <div className="classify-row" key={item.text}>
@@ -780,6 +808,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-task">
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
+          {screenAudio && <LessonAudioButton url={screenAudio} />}
           <div className="sentence-builder">
             <div className="sentence-built">
               {ordered.length ? ordered.map((token, index) => <button key={`${token}-${index}`} onClick={() => setOrdered(current => current.filter((_, i) => i !== index))}>{token}</button>) : <span>Нажимай на слова по порядку</span>}
@@ -799,11 +828,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           <p className="lesson-task-lead">{screen.note}</p>
+          <LessonAudioButton url={screenAudio} large label="Послушать пример" />
           <div className="pronunciation-list">
             {screen.phrases.map((phrase, index) => (
               <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
                 <strong>{phrase}</strong>
-                <button onClick={() => speakEnglish(phrase, voicePreset)}><Volume2 size={18} /> Слушать</button>
                 <button onClick={() => setRepeated(prev => ({ ...prev, [index]: true }))}><Mic2 size={18} /> Повторил{repeated[index] && <Check size={15} />}</button>
               </div>
             ))}
@@ -818,6 +847,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           <p className="lesson-task-lead">Сначала произнеси реплику сам. После этого отметь выполнение и сравни с вариантом.</p>
+          {screenAudio && <LessonAudioButton url={screenAudio} />}
           <div className="speaking-final-list">
             {screen.items.map((item, index) => (
               <div className={`speaking-final-item ${spoken[index] ? 'done' : ''}`} key={item.prompt}>
@@ -1271,4 +1301,5 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const isAdminRoute = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
+createRoot(document.getElementById('root')).render(isAdminRoute ? <AdminApp /> : <App />);
