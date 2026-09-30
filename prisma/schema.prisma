@@ -46,7 +46,7 @@ model CourseBlock {
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
-  @@unique([moduleId, position])
+  @@unique([blockId, position])
 }
 
 model Lesson {
@@ -60,6 +60,9 @@ model Lesson {
   tagPrimary   String
   tagSecondary String
   description  String
+  objective    String?
+  status       String       @default("outline")
+  content      Json?
   progress     Int          @default(0)
   duration     Int
   imageKey     String
