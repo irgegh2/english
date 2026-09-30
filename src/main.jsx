@@ -2355,16 +2355,17 @@ function App() {
     if (cachedLesson) return;
 
     try {
-      await prefetchModuleLessons(selectedModule);
-      const warmedLesson = lessonCacheRef.current.get(lesson.id);
-      if (warmedLesson) {
-        setSelectedLesson(warmedLesson);
-        return;
-      }
+      const directLessonRequest = fetch(`/api/course/lessons/${lesson.id}`)
+        .then(async response => {
+          if (!response.ok) throw new Error('Failed to load lesson');
+          return response.json();
+        });
 
-      const response = await fetch(`/api/course/lessons/${lesson.id}`);
-      if (!response.ok) throw new Error('Failed to load lesson');
-      const fullLesson = await response.json();
+      const moduleWarmRequest = prefetchModuleLessons(selectedModule)
+        .then(() => lessonCacheRef.current.get(lesson.id))
+        .then(warmed => warmed || directLessonRequest);
+
+      const fullLesson = await Promise.race([moduleWarmRequest, directLessonRequest]);
       lessonCacheRef.current.set(fullLesson.id, fullLesson);
       setSelectedLesson(fullLesson);
     } catch {
