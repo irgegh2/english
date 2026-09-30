@@ -497,7 +497,11 @@ app.use((error, _req, res, _next) => {
   res.status(400).json({ error: error.message || 'Request failed' });
 });
 
-await ensureVoiceProfiles();
+try {
+  await ensureVoiceProfiles();
+} catch (error) {
+  console.warn('Voice profiles are not initialized yet:', error.message);
+}
 
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);
