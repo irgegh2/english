@@ -469,11 +469,12 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 
 let activeLessonAudio = null;
 
+const UI_SOUND_VERSION = '20260930-3';
 const UI_SOUNDS = {
-  click: { url: '/assets/sounds/mclick.mp3', volume: 0.42 },
-  success: { url: '/assets/sounds/success.mp3', volume: 0.72 },
-  error: { url: '/assets/sounds/error.mp3', volume: 0.72 },
-  end: { url: '/assets/sounds/end.mp3', volume: 0.78 },
+  click: { url: `/assets/sounds/mclick.mp3?v=${UI_SOUND_VERSION}`, volume: 0.42 },
+  success: { url: `/assets/sounds/success.mp3?v=${UI_SOUND_VERSION}`, volume: 0.72 },
+  error: { url: `/assets/sounds/error.mp3?v=${UI_SOUND_VERSION}`, volume: 0.72 },
+  end: { url: `/assets/sounds/end.mp3?v=${UI_SOUND_VERSION}`, volume: 0.86 },
 };
 
 let uiAudioContext = null;
