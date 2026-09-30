@@ -46,7 +46,30 @@ const upload = multer({
 const clampProgress = value => Math.max(0, Math.min(100, Number(value ?? 0)));
 const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const asString = (value, fallback = '') => value == null ? fallback : String(value);
-const VOICE_IDS = new Set(['ella', 'grace', 'chloe', 'oliver', 'james', 'theo']);
+const DEFAULT_VOICES = [
+  { id: 'ella', position: 1, name: 'Ella', gender: 'Женский', note: 'мягкий · спокойный', sampleText: "Hi! I'm Ella. This is my voice." },
+  { id: 'grace', position: 2, name: 'Grace', gender: 'Женский', note: 'ясный · нейтральный', sampleText: "Hi! I'm Grace. This is my voice." },
+  { id: 'chloe', position: 3, name: 'Chloe', gender: 'Женский', note: 'живой · энергичный', sampleText: "Hi! I'm Chloe. This is my voice." },
+  { id: 'oliver', position: 4, name: 'Oliver', gender: 'Мужской', note: 'спокойный · низкий', sampleText: "Hi! I'm Oliver. This is my voice." },
+  { id: 'james', position: 5, name: 'James', gender: 'Мужской', note: 'нейтральный · чёткий', sampleText: "Hi! I'm James. This is my voice." },
+  { id: 'theo', position: 6, name: 'Theo', gender: 'Мужской', note: 'быстрый · разговорный', sampleText: "Hi! I'm Theo. This is my voice." },
+];
+const VOICE_IDS = new Set(DEFAULT_VOICES.map(voice => voice.id));
+
+async function ensureVoiceProfiles() {
+  for (const voice of DEFAULT_VOICES) {
+    await prisma.voiceProfile.upsert({
+      where: { id: voice.id },
+      update: {
+        position: voice.position,
+        name: voice.name,
+        gender: voice.gender,
+        note: voice.note,
+      },
+      create: voice,
+    });
+  }
+}
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -473,6 +496,8 @@ app.use((error, _req, res, _next) => {
   console.error(error);
   res.status(400).json({ error: error.message || 'Request failed' });
 });
+
+await ensureVoiceProfiles();
 
 app.listen(port, () => {
   console.log(`API listening on http://localhost:${port}`);
