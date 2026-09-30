@@ -19,7 +19,9 @@
     "cleanup:hello-audio": "node scripts/cleanup-unused-hello-audio.mjs",
     "cleanup:orphan-audio": "node scripts/cleanup-orphan-s3-audio.mjs",
     "content:sync:block1": "node scripts/sync-block1-lessons.mjs",
-    "content:validate:block1": "node scripts/validate-block1-lessons.mjs"
+    "content:validate:block1": "node scripts/validate-block1-lessons.mjs",
+    "audio:audit:intro": "node scripts/audit-legacy-intro-audio.mjs",
+    "audio:clean:intro": "node scripts/audit-legacy-intro-audio.mjs --apply"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",

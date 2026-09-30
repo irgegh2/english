@@ -1764,7 +1764,6 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             <span className="lesson-eyebrow">{screen.eyebrow}</span>
             <h1>{screen.title}</h1>
             <p>{screen.body}</p>
-            <LessonAudioButton url={screenAudio} />
             <div className="lesson-chip-row">{screen.chips?.map(chip => <span key={chip}>{chip}</span>)}</div>
           </div>
           <SceneArt type="meeting" imageUrl={screen.resolvedImageUrl || screen.imageUrl} />
