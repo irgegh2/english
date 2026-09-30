@@ -37,6 +37,13 @@ const normalizeLibraryText = value => String(value || '')
   .toLocaleLowerCase('en-US')
   .replace(/\s+/g, ' ');
 const normalizeAudioPhrase = normalizeLibraryText;
+const expandReusableAudioPhrase = value => {
+  const phrase = String(value || '').trim();
+  if (!phrase) return [];
+  const parts = phrase.split(/\s*[—–-]\s*/).map(part => part.trim()).filter(Boolean);
+  if (parts.length > 1 && parts.every(part => /^[A-Za-z]$/.test(part))) return parts;
+  return [phrase];
+};
 
 const wait = ms => new Promise(resolve => window.setTimeout(resolve, ms));
 
@@ -375,6 +382,39 @@ function AudioPhraseField({ screen, onChange, audioDictionary = [] }) {
   );
 }
 
+function AudioSequenceStatus({ screen, audioDictionary = [] }) {
+  const phrases = [...new Set(
+    (screen.audioPhrases || []).flatMap(expandReusableAudioPhrase).filter(Boolean)
+  )];
+
+  if (!phrases.length) return null;
+
+  return (
+    <section className="admin-media-section admin-audio-reference-section">
+      <div className="admin-section-minihead">
+        <div><Volume2 size={18} /><strong>Аудио-последовательность</strong></div>
+        <span>{phrases.length} элементов · берутся из аудиословаря</span>
+      </div>
+      <div className="admin-audio-sequence-status">
+        {phrases.map(phrase => {
+          const key = normalizeAudioPhrase(phrase);
+          const entry = audioDictionary.find(item => item.key === key || normalizeAudioPhrase(item.text) === key);
+          const count = VOICES.filter(([id]) => entry?.audioFiles?.[id]).length;
+          return (
+            <div key={phrase} className={count ? 'ready' : 'missing'}>
+              <strong>{phrase}</strong>
+              <span>{count ? <><Check size={13} /> {count}/{VOICES.length} голосов</> : 'нет аудио'}</span>
+            </div>
+          );
+        })}
+      </div>
+      <p className="admin-audio-reference-help">
+        Добавляй недостающие записи в «Аудиословарь». Для spelling последовательности вроде A — L — E — X автоматически используют отдельные записи букв.
+      </p>
+    </section>
+  );
+}
+
 function QuestionsEditor({ items = [], onChange, withScene = false }) {
   const update = (index, patch) => {
     const next = [...items];
@@ -562,7 +602,11 @@ function ScreenFields({ screen, onChange, audioDictionary, mediaLibrary }) {
 
       <ImageLibraryPicker screen={screen} onChange={onChange} mediaLibrary={mediaLibrary} />
 
-      <AudioPhraseField screen={screen} onChange={onChange} audioDictionary={audioDictionary} />
+      {screen.type === 'specTask' && (screen.audioPhrases || []).length ? (
+        <AudioSequenceStatus screen={screen} audioDictionary={audioDictionary} />
+      ) : (
+        <AudioPhraseField screen={screen} onChange={onChange} audioDictionary={audioDictionary} />
+      )}
     </div>
   );
 }
