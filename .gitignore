@@ -5,3 +5,6 @@ dist
 *.log
 public/uploads/*
 !public/uploads/.gitkeep
+
+backups/
+.env.local-backup-*

@@ -967,6 +967,183 @@ function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveSt
   );
 }
 
+function StorageSettingsPanel({ settings, setSettings, loading, onReload, onSaveState }) {
+  const [draft, setDraft] = useState(settings || {});
+  const [secretAccessKey, setSecretAccessKey] = useState('');
+  const [testing, setTesting] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+
+  useEffect(() => {
+    setDraft(settings || {});
+  }, [settings]);
+
+  const set = (key, value) => setDraft(current => ({ ...current, [key]: value }));
+
+  const save = async () => {
+    onSaveState('saving');
+    try {
+      const updated = await api('/api/admin/storage-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          endpoint: draft.endpoint || '',
+          region: draft.region || 'us-east-1',
+          bucket: draft.bucket || '',
+          projectId: draft.projectId || '',
+          accessKeyId: draft.accessKeyId || '',
+          secretAccessKey,
+        }),
+      });
+      setSettings(updated);
+      setDraft(updated);
+      setSecretAccessKey('');
+      onSaveState('saved');
+      return updated;
+    } catch (error) {
+      onSaveState('error');
+      window.alert(error.message);
+      return null;
+    }
+  };
+
+  const test = async () => {
+    const saved = await save();
+    if (!saved) return;
+    setTesting(true);
+    try {
+      const result = await api('/api/admin/storage-settings/test', { method: 'POST' });
+      window.alert(result.message || 'Подключение работает.');
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const migrateLocalUploads = async () => {
+    if (!window.confirm('Перенести все найденные локальные /uploads-файлы в REG.RU S3 и заменить ссылки в базе? Локальные копии останутся на месте.')) return;
+    const saved = await save();
+    if (!saved) return;
+
+    setMigrating(true);
+    onSaveState('saving');
+    try {
+      const result = await api('/api/admin/storage-settings/migrate-local-uploads', { method: 'POST' });
+      onSaveState('saved');
+      window.alert(`Готово. Перенесено уникальных файлов: ${result.migrated || 0}.`);
+      await onReload();
+    } catch (error) {
+      onSaveState('error');
+      window.alert(error.message);
+    } finally {
+      setMigrating(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="admin-loading"><Loader2 className="spin" /> Загружаем настройки…</div>;
+  }
+
+  return (
+    <div className="admin-storage-settings-page">
+      <div className="admin-editor-head">
+        <div className="admin-editor-heading">
+          <div className="admin-editor-path">Инфраструктура</div>
+          <h1>Хранилище REG.RU S3</h1>
+          <p>Новые картинки и аудио загружаются напрямую в S3. Secret Access Key хранится в базе только в зашифрованном виде.</p>
+        </div>
+      </div>
+
+      {!draft.encryptionReady && (
+        <section className="admin-storage-warning">
+          <strong>Нужно один раз создать STORAGE_MASTER_KEY</strong>
+          <span>Без него сервер намеренно не сохраняет Secret Access Key. Команда настройки создаст ключ автоматически.</span>
+        </section>
+      )}
+
+      <section className="admin-editor-section">
+        <div className="admin-editor-title">
+          <div><strong>Подключение к S3</strong><span>REG.RU Object Storage</span></div>
+          <span className={`admin-storage-secret-state ${draft.hasSecretAccessKey ? 'ready' : ''}`}>
+            {draft.hasSecretAccessKey ? <><Check size={14} /> Secret Key сохранён</> : 'Secret Key не задан'}
+          </span>
+        </div>
+
+        <div className="admin-form-grid">
+          <Field label="S3 API Endpoint" wide>
+            <TextInput value={draft.endpoint || ''} onChange={value => set('endpoint', value)} placeholder="https://s3.regru.cloud" />
+          </Field>
+          <Field label="Bucket">
+            <TextInput value={draft.bucket || ''} onChange={value => set('bucket', value)} placeholder="английский" />
+          </Field>
+          <Field label="Region">
+            <TextInput value={draft.region || 'us-east-1'} onChange={value => set('region', value)} />
+          </Field>
+          <Field label="Project ID" wide>
+            <TextInput value={draft.projectId || ''} onChange={value => set('projectId', value)} />
+          </Field>
+          <Field label="Access Key ID" wide>
+            <TextInput value={draft.accessKeyId || ''} onChange={value => set('accessKeyId', value)} />
+          </Field>
+          <Field
+            label="Secret Access Key"
+            wide
+            hint={draft.hasSecretAccessKey ? 'Ключ уже сохранён. Оставь поле пустым, чтобы не менять его.' : 'Вставь Secret Access Key из REG.RU. После сохранения он больше не возвращается в браузер.'}
+          >
+            <input
+              type="password"
+              autoComplete="new-password"
+              value={secretAccessKey}
+              onChange={event => setSecretAccessKey(event.target.value)}
+              placeholder={draft.hasSecretAccessKey ? '••••••••••••••••••••' : 'Вставь секретный ключ'}
+            />
+          </Field>
+        </div>
+
+        <div className="admin-storage-actions">
+          <button onClick={save}><Check size={16} /> Сохранить настройки</button>
+          <button className="secondary" onClick={test} disabled={testing}>
+            {testing ? <Loader2 size={16} className="spin" /> : <RefreshCw size={16} />}
+            Проверить подключение
+          </button>
+        </div>
+      </section>
+
+      <section className="admin-editor-section">
+        <div className="admin-editor-title">
+          <div><strong>Перенос старых локальных файлов</strong><span>Для файлов, которые раньше лежали в public/uploads</span></div>
+        </div>
+        <p className="admin-storage-explain">
+          После настройки S3 можно один раз перенести старые загруженные картинки и аудио. Сервер загрузит их в S3 и автоматически заменит ссылки в голосах, аудиословаре, медиатеке и заданиях.
+        </p>
+        <button className="admin-storage-migrate" onClick={migrateLocalUploads} disabled={migrating || !draft.hasSecretAccessKey}>
+          {migrating ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+          {migrating ? 'Переносим…' : 'Перенести локальные файлы в S3'}
+        </button>
+      </section>
+
+      <section className="admin-editor-section">
+        <div className="admin-editor-title">
+          <div><strong>PostgreSQL REG.RU</strong><span>Подключение базы задаётся через DATABASE_URL</span></div>
+          <span className={`admin-storage-secret-state ${draft.database?.cloud ? 'ready' : ''}`}>
+            {draft.database?.cloud ? <><Check size={14} /> REG.RU подключена</> : 'Сейчас не REG.RU'}
+          </span>
+        </div>
+        <p className="admin-storage-explain">
+          База данных переключается не через браузер, а через локальный .env, чтобы пароль PostgreSQL не попадал в админский API. Скрипт миграции переносит текущую базу целиком и затем меняет DATABASE_URL на облачный PostgreSQL.
+        </p>
+        {draft.database?.host && (
+          <div className="admin-storage-db-grid">
+            <span><small>Хост</small><strong>{draft.database.host}</strong></span>
+            <span><small>Порт</small><strong>{draft.database.port}</strong></span>
+            <span><small>База</small><strong>{draft.database.database}</strong></span>
+            <span><small>Пользователь</small><strong>{draft.database.user}</strong></span>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function VoiceAdminPanel({ voices, setVoices, loading, onSaveState }) {
   const updateVoice = async (id, patch) => {
     const current = voices.find(voice => voice.id === id);
@@ -1066,6 +1243,8 @@ function AdminApp() {
   const [audioDictionaryLoading, setAudioDictionaryLoading] = useState(true);
   const [mediaLibrary, setMediaLibrary] = useState([]);
   const [mediaLibraryLoading, setMediaLibraryLoading] = useState(true);
+  const [storageSettings, setStorageSettings] = useState(null);
+  const [storageSettingsLoading, setStorageSettingsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState('saved');
   const [selectedModuleId, setSelectedModuleId] = useState(null);
@@ -1140,11 +1319,26 @@ function AdminApp() {
     }
   };
 
+  const loadStorageSettings = async () => {
+    setStorageSettingsLoading(true);
+    try {
+      const data = await api('/api/admin/storage-settings');
+      setStorageSettings(data);
+      return data;
+    } catch (error) {
+      window.alert(error.message);
+      return null;
+    } finally {
+      setStorageSettingsLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadTree();
     void loadVoices();
     void loadAudioDictionary();
     void loadMediaLibrary();
+    void loadStorageSettings();
   }, []);
 
   useEffect(() => {
@@ -1398,9 +1592,11 @@ function AdminApp() {
                 ? loadAudioDictionary()
                 : adminSection === 'mediaLibrary'
                   ? loadMediaLibrary()
-                  : loadTree()}
-            disabled={loading || voicesLoading || audioDictionaryLoading || mediaLibraryLoading}
-          ><RefreshCw size={16} className={(loading || voicesLoading || audioDictionaryLoading || mediaLibraryLoading) ? 'spin' : ''} /> Обновить данные</button>
+                  : adminSection === 'settings'
+                    ? loadStorageSettings()
+                    : loadTree()}
+            disabled={loading || voicesLoading || audioDictionaryLoading || mediaLibraryLoading || storageSettingsLoading}
+          ><RefreshCw size={16} className={(loading || voicesLoading || audioDictionaryLoading || mediaLibraryLoading || storageSettingsLoading) ? 'spin' : ''} /> Обновить данные</button>
           <a href="/">Открыть сайт</a>
         </div>
       </header>
@@ -1434,7 +1630,12 @@ function AdminApp() {
             <Image size={19} /><span><strong>Медиатека</strong><small>{mediaLibrary.length} картинок</small></span>
           </button>
           <button disabled><BarChart3 size={19} /><span><strong>Аналитика</strong><small>скоро</small></span></button>
-          <button disabled><Settings2 size={19} /><span><strong>Настройки</strong><small>скоро</small></span></button>
+          <button
+            className={adminSection === 'settings' ? 'active' : ''}
+            onClick={() => { setAdminSection('settings'); setBrowserOpen(false); }}
+          >
+            <Settings2 size={19} /><span><strong>Настройки</strong><small>S3 и база</small></span>
+          </button>
         </aside>
 
         {adminSection === 'course' && browserOpen && (
@@ -1473,6 +1674,14 @@ function AdminApp() {
               setEntries={setMediaLibrary}
               loading={mediaLibraryLoading}
               onReload={loadMediaLibrary}
+              onSaveState={setSaveState}
+            />
+          ) : adminSection === 'settings' ? (
+            <StorageSettingsPanel
+              settings={storageSettings}
+              setSettings={setStorageSettings}
+              loading={storageSettingsLoading}
+              onReload={loadStorageSettings}
               onSaveState={setSaveState}
             />
           ) : loading ? (
