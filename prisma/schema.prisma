@@ -107,3 +107,17 @@ model MediaAsset {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+
+model StorageSettings {
+  id                       Int      @id @default(1)
+  provider                 String   @default("reg-s3")
+  endpoint                 String   @default("https://s3.regru.cloud")
+  region                   String   @default("us-east-1")
+  bucket                   String   @default("")
+  projectId                String   @default("")
+  accessKeyId              String   @default("")
+  secretAccessKeyEncrypted String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
