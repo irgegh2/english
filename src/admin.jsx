@@ -26,6 +26,7 @@ const TASK_TYPES = [
   ['pronunciation', 'Произношение'],
   ['listeningDialog', 'Диалог на слух'],
   ['speakingFinal', 'Финальное говорение'],
+  ['specTask', 'Гибкая учебная механика'],
 ];
 
 const deepClone = value => JSON.parse(JSON.stringify(value ?? null));
@@ -91,6 +92,18 @@ const createScreen = (type = 'choice') => {
   if (type === 'pronunciation') return { ...base, phrases: ['', ''], note: '' };
   if (type === 'listeningDialog') return { ...base, items: [{ prompt: '', options: ['', ''], answer: '', scene: '' }] };
   if (type === 'speakingFinal') return { ...base, items: [{ prompt: '', scene: 'meeting', answers: [''] }], finishText: '' };
+  if (type === 'specTask') return {
+    ...base,
+    mode: 'info',
+    lead: [],
+    body: [],
+    questions: [],
+    pairs: [],
+    tokens: [],
+    orderAnswer: [],
+    expected: [],
+    audioPhrases: [],
+  };
   return base;
 };
 
@@ -505,6 +518,46 @@ function ScreenFields({ screen, onChange, audioDictionary, mediaLibrary }) {
       {screen.type === 'speakingFinal' && <>
         <SpeakingItemsEditor items={screen.items || []} onChange={value => set('items', value)} />
         <Field label="Финальный текст" wide><TextArea rows={3} value={screen.finishText} onChange={value => set('finishText', value)} /></Field>
+      </>}
+
+      {screen.type === 'specTask' && <>
+        <Field label="Базовый движок">
+          <select value={screen.mode || 'info'} onChange={event => set('mode', event.target.value)}>
+            <option value="info">Информация / теория</option>
+            <option value="study">Карточка / изучение</option>
+            <option value="choice">Выбор ответа</option>
+            <option value="listening">Аудирование</option>
+            <option value="reading">Чтение</option>
+            <option value="match">Сопоставление</option>
+            <option value="classify">Классификация</option>
+            <option value="order">Порядок / сборка</option>
+            <option value="speaking">Говорение</option>
+            <option value="text">Письменный ответ</option>
+            <option value="dialog">Диалог / сценарий</option>
+          </select>
+        </Field>
+        <Field label="Фокус / единица"><TextInput value={screen.focus || ''} onChange={value => set('focus', value)} /></Field>
+        <LinesEditor label="Краткий контекст" value={screen.lead || []} onChange={value => set('lead', value)} />
+        <LinesEditor label="Полная спецификация экрана" value={screen.body || []} onChange={value => set('body', value)} />
+        <LinesEditor label="Аудио-последовательность" value={screen.audioPhrases || []} onChange={value => set('audioPhrases', value)} placeholder="Одна фраза/буква на строку" />
+        {['choice', 'listening', 'reading'].includes(screen.mode) && (
+          <QuestionsEditor items={screen.questions || []} onChange={value => set('questions', value)} />
+        )}
+        {['match', 'classify'].includes(screen.mode) && (
+          <LinesEditor
+            label="Пары / цепочки"
+            value={(screen.pairs || []).map(pair => pair.join(' → '))}
+            onChange={value => set('pairs', value.map(line => line.split('→').map(part => part.trim()).filter(Boolean)).filter(pair => pair.length >= 2))}
+            placeholder="France → Paris → French"
+          />
+        )}
+        {screen.mode === 'order' && <>
+          <LinesEditor label="Элементы для сборки" value={screen.tokens || []} onChange={value => set('tokens', value)} />
+          <LinesEditor label="Правильный порядок" value={screen.orderAnswer || []} onChange={value => set('orderAnswer', value)} />
+        </>}
+        {screen.mode === 'speaking' && (
+          <LinesEditor label="Допустимые / ожидаемые варианты" value={screen.expected || []} onChange={value => set('expected', value)} />
+        )}
       </>}
 
       <ImageLibraryPicker screen={screen} onChange={onChange} mediaLibrary={mediaLibrary} />
