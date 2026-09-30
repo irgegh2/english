@@ -4094,3 +4094,15 @@ body.lesson-scroll-locked{
 @media(max-width:620px){
   .lesson-session-stats{grid-template-columns:1fr}
 }
+
+
+.lesson-player-page .spec-task{
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+}
+.lesson-player-page .spec-task::-webkit-scrollbar{width:8px}
+.lesson-player-page .spec-task::-webkit-scrollbar-thumb{
+  border-radius:999px;
+  background:#d5e2df;
+}
