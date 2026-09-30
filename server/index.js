@@ -245,28 +245,30 @@ const sanitizeAudioFiles = value => {
   return files;
 };
 
-async function hydrateLessonContent(lesson) {
+function lessonScreens(lesson) {
   const content = lesson?.content;
-  const screens = content && typeof content === 'object' && Array.isArray(content.screens)
+  return content && typeof content === 'object' && Array.isArray(content.screens)
     ? content.screens
     : [];
+}
+
+async function hydrateLessonsContent(lessons = []) {
+  if (!lessons.length) return [];
 
   const phraseKeys = [...new Set(
-    screens.flatMap(screen => [
+    lessons.flatMap(lesson => lessonScreens(lesson).flatMap(screen => [
       ...expandReusableAudioPhrase(screen?.audioPhrase).map(phrase => normalizeAudioPhrase(phrase)),
       ...(Array.isArray(screen?.audioPhrases)
         ? screen.audioPhrases.flatMap(phrase => expandReusableAudioPhrase(phrase).map(part => normalizeAudioPhrase(part)))
         : []),
-    ]).filter(Boolean)
+    ])).filter(Boolean)
   )];
 
   const mediaIds = [...new Set(
-    screens
+    lessons.flatMap(lesson => lessonScreens(lesson)
       .map(screen => Number(screen?.mediaId))
-      .filter(Number.isInteger)
+      .filter(Number.isInteger))
   )];
-
-  if (!phraseKeys.length && !mediaIds.length) return lesson;
 
   const [audioEntries, mediaEntries] = await Promise.all([
     phraseKeys.length
@@ -280,40 +282,105 @@ async function hydrateLessonContent(lesson) {
   const audioByKey = new Map(audioEntries.map(entry => [entry.key, sanitizeAudioFiles(entry.audioFiles)]));
   const mediaById = new Map(mediaEntries.map(entry => [entry.id, entry]));
 
-  return {
-    ...lesson,
-    content: {
-      ...content,
-      screens: screens.map(screen => {
-        const next = { ...screen };
+  return lessons.map(lesson => {
+    const content = lesson?.content;
+    const screens = lessonScreens(lesson);
+    if (!screens.length) return lesson;
 
-        const phraseKey = normalizeAudioPhrase(screen?.audioPhrase);
-        const resolvedAudioFiles = phraseKey ? audioByKey.get(phraseKey) : null;
-        if (resolvedAudioFiles) next.resolvedAudioFiles = resolvedAudioFiles;
+    return {
+      ...lesson,
+      content: {
+        ...content,
+        screens: screens.map(screen => {
+          const next = { ...screen };
 
-        if (Array.isArray(screen?.audioPhrases) && screen.audioPhrases.length) {
-          next.resolvedAudioSequence = screen.audioPhrases.flatMap(phrase =>
-            expandReusableAudioPhrase(phrase).map(part => {
-              const key = normalizeAudioPhrase(part);
-              return {
-                phrase: part,
-                audioFiles: key ? (audioByKey.get(key) || {}) : {},
-              };
-            })
-          );
-        }
+          const phraseKey = normalizeAudioPhrase(screen?.audioPhrase);
+          const resolvedAudioFiles = phraseKey ? audioByKey.get(phraseKey) : null;
+          if (resolvedAudioFiles) next.resolvedAudioFiles = resolvedAudioFiles;
 
-        const mediaId = Number(screen?.mediaId);
-        const media = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
-        if (media) {
-          next.resolvedImageUrl = media.url;
-          next.resolvedImageName = media.name;
-        }
+          if (Array.isArray(screen?.audioPhrases) && screen.audioPhrases.length) {
+            next.resolvedAudioSequence = screen.audioPhrases.flatMap(phrase =>
+              expandReusableAudioPhrase(phrase).map(part => {
+                const key = normalizeAudioPhrase(part);
+                return {
+                  phrase: part,
+                  audioFiles: key ? (audioByKey.get(key) || {}) : {},
+                };
+              })
+            );
+          }
 
-        return next;
-      }),
+          const mediaId = Number(screen?.mediaId);
+          const media = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
+          if (media) {
+            next.resolvedImageUrl = media.url;
+            next.resolvedImageName = media.name;
+          }
+
+          return next;
+        }),
+      },
+    };
+  });
+}
+
+async function hydrateLessonContent(lesson) {
+  const [hydrated] = await hydrateLessonsContent([lesson]);
+  return hydrated || lesson;
+}
+
+const lessonSummarySelect = {
+  id: true,
+  moduleId: true,
+  blockId: true,
+  position: true,
+  title: true,
+  tagPrimary: true,
+  tagSecondary: true,
+  description: true,
+  objective: true,
+  status: true,
+  progress: true,
+  duration: true,
+  imageKey: true,
+};
+
+async function loadCourseCatalog() {
+  const modules = await prisma.courseModule.findMany({
+    orderBy: { position: 'asc' },
+    include: {
+      blocks: {
+        orderBy: { position: 'asc' },
+        include: {
+          lessons: {
+            orderBy: { position: 'asc' },
+            select: lessonSummarySelect,
+          },
+        },
+      },
     },
-  };
+  });
+
+  return modules.map(module => ({
+    id: module.id,
+    position: module.position,
+    title: module.title,
+    shortTitle: module.shortTitle,
+    description: module.description,
+    level: module.level,
+    progress: module.progress,
+    blockCount: module.blocks.length,
+    blocks: module.blocks.map(block => ({
+      id: block.id,
+      moduleId: block.moduleId,
+      position: block.position,
+      title: block.title,
+      imageKey: block.imageKey,
+      progress: block.progress,
+      lessonCount: block.lessons.length,
+      lessons: block.lessons,
+    })),
+  }));
 }
 
 async function ensureVoiceProfiles() {
@@ -337,6 +404,87 @@ app.get('/api/health', async (_req, res) => {
     res.json({ ok: true, database: 'connected' });
   } catch (error) {
     res.status(503).json({ ok: false, database: 'unavailable', message: error.message });
+  }
+});
+
+app.get('/api/bootstrap', async (_req, res) => {
+  try {
+    const [profile, modules, voices] = await Promise.all([
+      prisma.profile.findUnique({ where: { id: 1 } }),
+      loadCourseCatalog(),
+      prisma.voiceProfile.findMany({ orderBy: { position: 'asc' } }),
+    ]);
+
+    if (!profile) return res.status(404).json({ error: 'Profile seed data not found' });
+
+    const currentModule = modules.find(module => module.position === profile.currentModulePosition) || null;
+    const currentBlock = currentModule?.blocks?.find(block => block.position === profile.currentBlockPosition) || null;
+
+    res.json({
+      profile,
+      modules,
+      voices,
+      dashboard: {
+        profile,
+        currentModule: currentModule ? {
+          id: currentModule.id,
+          position: currentModule.position,
+          title: currentModule.title,
+          shortTitle: currentModule.shortTitle,
+          description: currentModule.description,
+          level: currentModule.level,
+          progress: currentModule.progress,
+          blockCount: currentModule.blockCount,
+        } : null,
+        currentBlock: currentBlock ? {
+          id: currentBlock.id,
+          moduleId: currentBlock.moduleId,
+          position: currentBlock.position,
+          title: currentBlock.title,
+          imageKey: currentBlock.imageKey,
+          progress: currentBlock.progress,
+          lessonCount: currentBlock.lessonCount,
+        } : null,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/course/modules/:id/preload', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid module id' });
+
+  try {
+    const module = await prisma.courseModule.findUnique({
+      where: { id },
+      include: {
+        blocks: {
+          orderBy: { position: 'asc' },
+          include: {
+            lessons: { orderBy: { position: 'asc' } },
+          },
+        },
+      },
+    });
+
+    if (!module) return res.status(404).json({ error: 'Module not found' });
+
+    const lessons = module.blocks.flatMap(block => block.lessons);
+    const hydratedLessons = await hydrateLessonsContent(lessons);
+    const hydratedById = new Map(hydratedLessons.map(lesson => [lesson.id, lesson]));
+
+    res.json({
+      moduleId: module.id,
+      lessonCount: hydratedLessons.length,
+      blocks: module.blocks.map(block => ({
+        id: block.id,
+        lessons: block.lessons.map(lesson => hydratedById.get(lesson.id) || lesson),
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
