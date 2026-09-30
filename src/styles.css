@@ -4150,3 +4150,43 @@ body.lesson-scroll-locked{
   .spec-short-answers label{grid-template-columns:1fr 24px}
   .spec-short-answers label>span{grid-column:1/-1}
 }
+
+
+.lesson-option-audio-icon{
+  flex:0 0 auto;
+  opacity:.72;
+}
+.lesson-inline-audio{
+  width:30px;
+  height:30px;
+  border:1px solid #d6e3df;
+  border-radius:999px;
+  display:inline-grid;
+  place-items:center;
+  background:#f5faf8;
+  color:#157f74;
+  cursor:pointer;
+  padding:0;
+}
+.lesson-inline-audio:hover{
+  background:#eaf7f3;
+  border-color:#bcded5;
+}
+.lesson-reply{
+  position:relative;
+}
+.lesson-reply .lesson-inline-audio{
+  margin-left:7px;
+  vertical-align:middle;
+}
+.classify-word{
+  display:flex;
+  align-items:center;
+  gap:7px;
+}
+.sentence-built button,
+.sentence-tokens button{
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+}

@@ -37,6 +37,74 @@ const normalizeLibraryText = value => String(value || '')
   .toLocaleLowerCase('en-US')
   .replace(/\s+/g, ' ');
 const normalizeAudioPhrase = normalizeLibraryText;
+const normalizeAutoMediaKey = value => normalizeLibraryText(
+  String(value || '').trim().replace(/[.!?…,:;]+$/u, '').trim()
+);
+
+const looksLikeEnglishAudio = value => {
+  const text = String(value || '').trim();
+  return Boolean(text) && text.length <= 180 && /[A-Za-z]/.test(text);
+};
+
+const collectAutoAudioTexts = screen => {
+  const values = [];
+  const add = value => {
+    const text = String(value || '').trim();
+    if (looksLikeEnglishAudio(text)) values.push(text);
+  };
+
+  add(screen?.phrase);
+  add(screen?.reply);
+  add(screen?.prompt);
+  add(screen?.focus);
+  (screen?.options || []).forEach(add);
+  (screen?.tokens || []).forEach(add);
+  (screen?.phrases || []).forEach(add);
+
+  if (Array.isArray(screen?.answer)) {
+    screen.answer.forEach(add);
+    if (screen.answer.length > 1) add(screen.answer.join(' '));
+  }
+  if (Array.isArray(screen?.orderAnswer)) {
+    screen.orderAnswer.forEach(add);
+    if (screen.orderAnswer.length > 1) add(screen.orderAnswer.join(' '));
+  }
+
+  for (const item of screen?.items || []) {
+    add(item?.text);
+    (item?.options || []).forEach(add);
+    (item?.answers || []).forEach(add);
+  }
+
+  for (const question of screen?.questions || []) {
+    (question?.options || []).forEach(add);
+    add(question?.answer);
+    (question?.answers || []).forEach(add);
+  }
+
+  for (const pair of screen?.pairs || []) {
+    if (Array.isArray(pair)) pair.forEach(add);
+  }
+
+  return [...new Set(values)];
+};
+
+const findAudioDictionaryEntry = (audioDictionary, value) => {
+  const key = normalizeAutoMediaKey(value);
+  if (!key) return null;
+  return audioDictionary.find(entry =>
+    normalizeAutoMediaKey(entry.key) === key ||
+    normalizeAutoMediaKey(entry.text) === key
+  ) || null;
+};
+
+const findAutomaticMedia = (mediaLibrary, screen) => {
+  if (screen?.mediaId || screen?.imageUrl) return null;
+  const candidates = [screen?.mediaKey, screen?.phrase, screen?.scene, screen?.title, screen?.imageKey]
+    .map(normalizeAutoMediaKey)
+    .filter(Boolean);
+  return mediaLibrary.find(item => candidates.includes(normalizeAutoMediaKey(item.name))) || null;
+};
 const expandReusableAudioPhrase = value => {
   const phrase = String(value || '').trim();
   if (!phrase) return [];
@@ -226,7 +294,8 @@ function ImageLibraryPicker({ screen, onChange, mediaLibrary = [] }) {
   const [selectedId, setSelectedId] = useState(null);
 
   const current = mediaLibrary.find(item => item.id === Number(screen.mediaId)) || null;
-  const previewUrl = current?.url || screen.imageUrl || '';
+  const automatic = findAutomaticMedia(mediaLibrary, screen);
+  const previewUrl = current?.url || screen.imageUrl || automatic?.url || '';
   const normalizedQuery = normalizeLibraryText(query);
   const results = mediaLibrary.filter(item => !normalizedQuery || normalizeLibraryText(item.name).includes(normalizedQuery));
   const selected = mediaLibrary.find(item => item.id === selectedId) || null;
@@ -262,11 +331,19 @@ function ImageLibraryPicker({ screen, onChange, mediaLibrary = [] }) {
           <div className="admin-library-image-empty"><Image size={26} /><span>Картинка не выбрана</span></div>
         )}
         <div className="admin-library-image-copy">
-          <strong>{current?.name || (previewUrl ? 'Старая картинка урока' : 'Нет картинки')}</strong>
-          <span>{current ? 'Связана с медиатекой: при замене файла обновится автоматически.' : previewUrl ? 'Legacy URL. Можно заменить картинкой из медиатеки.' : 'Открой поиск и выбери заранее загруженное изображение.'}</span>
+          <strong>{current?.name || automatic?.name || (screen.imageUrl ? 'Старая картинка урока' : 'Нет картинки')}</strong>
+          <span>{
+            current
+              ? 'Связана с медиатекой: при замене файла обновится автоматически.'
+              : automatic
+                ? 'Подставляется автоматически из медиатеки по названию/сцене. Вручную выбирать не обязательно.'
+                : screen.imageUrl
+                  ? 'Legacy URL. Можно заменить картинкой из медиатеки.'
+                  : 'Если название или ключ сцены совпадут с медиатекой, картинка подставится автоматически.'
+          }</span>
           <div className="admin-media-actions">
             <button className="admin-media-library-choose" onClick={openPicker}><Search size={15} /> {previewUrl ? 'Выбрать другую' : 'Выбрать картинку'}</button>
-            {previewUrl && <button className="admin-ghost-danger" onClick={clear}><Trash2 size={14} /> Убрать</button>}
+            {(current || screen.imageUrl) && <button className="admin-ghost-danger" onClick={clear}><Trash2 size={14} /> Убрать</button>}
           </div>
         </div>
       </div>
@@ -311,6 +388,68 @@ function ImageLibraryPicker({ screen, onChange, mediaLibrary = [] }) {
           </section>
         </div>
       )}
+    </section>
+  );
+}
+
+function DirectLessonAudioField({ screen, onChange }) {
+  const files = screen.audioFiles || {};
+  const update = (voiceId, url) => {
+    const next = { ...files };
+    if (url) next[voiceId] = url;
+    else delete next[voiceId];
+    onChange({ ...screen, audioFiles: next });
+  };
+
+  return (
+    <section className="admin-media-section admin-direct-audio-section">
+      <div className="admin-section-minihead">
+        <div><FileAudio size={18} /><strong>Аудио именно этого задания</strong></div>
+        <span>не берётся из аудиословаря</span>
+      </div>
+      <p className="admin-audio-reference-help">
+        Используй для аудирования, где ученик сначала слышит конкретную запись. Файл хранится прямо в задании отдельно для каждого голоса.
+      </p>
+      <div className="admin-audio-grid">
+        {VOICES.map(([id, name, gender]) => (
+          <MediaUploader
+            key={id}
+            kind="audio"
+            label={`${name} · ${gender}`}
+            value={files[id] || ''}
+            onChange={url => update(id, url)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AutoAudioStatus({ screen, audioDictionary = [] }) {
+  const phrases = collectAutoAudioTexts(screen);
+  if (!phrases.length) return null;
+
+  return (
+    <section className="admin-media-section admin-audio-reference-section">
+      <div className="admin-section-minihead">
+        <div><Volume2 size={18} /><strong>Автоматическая озвучка элементов</strong></div>
+        <span>по тексту из общего аудиословаря</span>
+      </div>
+      <p className="admin-audio-reference-help">
+        Ничего привязывать вручную не нужно: английские слова, варианты ответа и токены ищутся в аудиословаре автоматически. Для сборки фразы отдельно ищется и запись всей правильной строки.
+      </p>
+      <div className="admin-audio-sequence-status">
+        {phrases.map(phrase => {
+          const entry = findAudioDictionaryEntry(audioDictionary, phrase);
+          const count = VOICES.filter(([id]) => entry?.audioFiles?.[id]).length;
+          return (
+            <div key={phrase} className={count ? 'ready' : 'missing'}>
+              <strong>{phrase}</strong>
+              <span>{count ? <><Check size={13} /> {count}/{VOICES.length} голосов</> : 'нет в аудиословаре'}</span>
+            </div>
+          );
+        })}
+      </div>
     </section>
   );
 }
@@ -604,9 +743,17 @@ function ScreenFields({ screen, onChange, audioDictionary, mediaLibrary }) {
 
       <ImageLibraryPicker screen={screen} onChange={onChange} mediaLibrary={mediaLibrary} />
 
-      {screen.type === 'specTask' && (screen.audioPhrases || []).length ? (
+      {(screen.type === 'listeningChoice' || screen.type === 'listeningDialog' || (screen.type === 'specTask' && screen.mode === 'listening')) && (
+        <DirectLessonAudioField screen={screen} onChange={onChange} />
+      )}
+
+      <AutoAudioStatus screen={screen} audioDictionary={audioDictionary} />
+
+      {screen.type === 'specTask' && (screen.audioPhrases || []).length && (
         <AudioSequenceStatus screen={screen} audioDictionary={audioDictionary} />
-      ) : (
+      )}
+
+      {screen.audioPhrase && (
         <AudioPhraseField screen={screen} onChange={onChange} audioDictionary={audioDictionary} />
       )}
     </div>

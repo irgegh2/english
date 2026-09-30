@@ -498,6 +498,61 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 
 
 let activeLessonAudio = null;
+const lessonAudioPreloadCache = new Map();
+const lessonImagePreloadCache = new Set();
+
+function collectLessonMediaUrls(lesson, presetId) {
+  const audio = new Set();
+  const images = new Set();
+
+  for (const screen of lesson?.content?.screens || []) {
+    const direct = screen?.audioFiles?.[presetId];
+    const resolved = screen?.resolvedAudioFiles?.[presetId];
+    if (direct) audio.add(direct);
+    if (resolved) audio.add(resolved);
+
+    for (const item of screen?.resolvedAudioSequence || []) {
+      const url = item?.audioFiles?.[presetId];
+      if (url) audio.add(url);
+    }
+
+    for (const files of Object.values(screen?.resolvedAudioByText || {})) {
+      const url = files?.[presetId];
+      if (url) audio.add(url);
+    }
+
+    const imageUrl = screen?.resolvedImageUrl || screen?.imageUrl;
+    if (imageUrl) images.add(imageUrl);
+    for (const item of screen?.items || []) {
+      const itemImageUrl = item?.resolvedImageUrl || item?.imageUrl;
+      if (itemImageUrl) images.add(itemImageUrl);
+    }
+  }
+
+  return { audio: [...audio], images: [...images] };
+}
+
+function preloadLessonMedia(lesson, presetId) {
+  if (typeof window === 'undefined') return;
+  const urls = collectLessonMediaUrls(lesson, presetId);
+
+  for (const url of urls.audio) {
+    if (lessonAudioPreloadCache.has(url)) continue;
+    const audio = new Audio();
+    audio.preload = 'auto';
+    audio.src = url;
+    audio.load();
+    lessonAudioPreloadCache.set(url, audio);
+  }
+
+  for (const url of urls.images) {
+    if (lessonImagePreloadCache.has(url)) continue;
+    const image = new Image();
+    image.decoding = 'async';
+    image.src = url;
+    lessonImagePreloadCache.add(url);
+  }
+}
 
 const UI_SOUND_VERSION = '20260930-6';
 const UI_SOUNDS = {
@@ -668,11 +723,33 @@ function installGlobalClickSound() {
   }, { capture: true, passive: true });
 }
 
+function normalizeAutoMediaKey(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/[.!?…,:;]+$/u, '')
+    .trim()
+    .toLocaleLowerCase('en-US')
+    .replace(/\s+/g, ' ');
+}
+
 function getScreenAudio(screen, presetId) {
-  return screen?.resolvedAudioFiles?.[presetId] || screen?.audioFiles?.[presetId] || '';
+  return screen?.audioFiles?.[presetId] || screen?.resolvedAudioFiles?.[presetId] || '';
+}
+
+function getTextAudio(screen, text, presetId) {
+  const key = normalizeAutoMediaKey(text);
+  return key ? (screen?.resolvedAudioByText?.[key]?.[presetId] || '') : '';
+}
+
+function playTextAudio(screen, text, presetId) {
+  return playLessonAudio(getTextAudio(screen, text, presetId));
 }
 
 function getScreenAudioSequence(screen, presetId) {
+  const direct = screen?.audioFiles?.[presetId] || '';
+  if (direct) return [direct];
+
   const sequence = Array.isArray(screen?.resolvedAudioSequence)
     ? screen.resolvedAudioSequence
       .map(item => item?.audioFiles?.[presetId] || '')
@@ -680,7 +757,7 @@ function getScreenAudioSequence(screen, presetId) {
     : [];
   if (sequence.length) return sequence;
 
-  const single = getScreenAudio(screen, presetId);
+  const single = screen?.resolvedAudioFiles?.[presetId] || '';
   return single ? [single] : [];
 }
 
@@ -871,7 +948,7 @@ function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule
   );
 }
 
-function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false, locked = false }) {
+function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false, locked = false, getOptionAudio }) {
   return (
     <div className="lesson-options">
       {options.map(option => {
@@ -879,15 +956,22 @@ function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false,
         const isCorrect = confirmed && isSelected && option === answer;
         const isWrong = confirmed && isSelected && option !== answer;
         const stateClass = isCorrect ? 'correct' : isWrong ? 'wrong' : isSelected ? 'selected' : '';
+        const optionAudio = getOptionAudio?.(option) || '';
 
         return (
           <button
             key={option}
             className={stateClass}
-            onClick={() => !locked && onSelect(option)}
+            data-ui-click={optionAudio ? 'off' : undefined}
+            onClick={() => {
+              if (locked) return;
+              if (optionAudio) playLessonAudio(optionAudio);
+              onSelect(option);
+            }}
             disabled={locked}
           >
             <span>{option}</span>
+            {optionAudio && <Volume2 size={15} className="lesson-option-audio-icon" />}
             {isCorrect && <Check size={18} />}
           </button>
         );
@@ -1079,7 +1163,7 @@ function inferSpecExpectedText(screen) {
   return '';
 }
 
-function MultiSelectOptions({ options, answers = [], selected = [], onSelect, confirmed = false, locked = false }) {
+function MultiSelectOptions({ options, answers = [], selected = [], onSelect, confirmed = false, locked = false, getOptionAudio }) {
   const selectedValues = Array.isArray(selected) ? selected : [];
 
   return (
@@ -1092,12 +1176,16 @@ function MultiSelectOptions({ options, answers = [], selected = [], onSelect, co
         const isMissed = confirmed && !isSelected && shouldBeSelected;
         const stateClass = isCorrect ? 'correct' : isWrong || isMissed ? 'wrong' : isSelected ? 'selected' : '';
 
+        const optionAudio = getOptionAudio?.(option) || '';
+
         return (
           <button
             key={option}
             className={stateClass}
+            data-ui-click={optionAudio ? 'off' : undefined}
             onClick={() => {
               if (locked) return;
+              if (optionAudio) playLessonAudio(optionAudio);
               const next = isSelected
                 ? selectedValues.filter(value => value !== option)
                 : [...selectedValues, option];
@@ -1106,6 +1194,7 @@ function MultiSelectOptions({ options, answers = [], selected = [], onSelect, co
             disabled={locked}
           >
             <span>{option}</span>
+            {optionAudio && <Volume2 size={15} className="lesson-option-audio-icon" />}
             {isSelected && <Check size={18} />}
           </button>
         );
@@ -1207,7 +1296,11 @@ function SpecTaskScreen({
   setSpoken,
   confirmation,
 }) {
-  const audioUrls = getScreenAudioSequence(screen, voicePreset);
+  const explicitAudioUrls = getScreenAudioSequence(screen, voicePreset);
+  const automaticPrimaryAudio = getTextAudio(screen, screen.focus || screen.phrase || '', voicePreset);
+  const audioUrls = explicitAudioUrls.length
+    ? explicitAudioUrls
+    : automaticPrimaryAudio ? [automaticPrimaryAudio] : [];
   const expectedAudioCount = Array.isArray(screen?.resolvedAudioSequence)
     ? screen.resolvedAudioSequence.length
     : Array.isArray(screen?.audioPhrases) ? screen.audioPhrases.length : (screen?.audioPhrase ? 1 : 0);
@@ -1283,6 +1376,7 @@ function SpecTaskScreen({
                   onSelect={value => setAnswer(index, value)}
                   confirmed={confirmation.status !== 'idle'}
                   locked={locked}
+                  getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
                 />
               ) : (
                 <ChoiceOptions
@@ -1292,6 +1386,7 @@ function SpecTaskScreen({
                   onSelect={value => setAnswer(index, value)}
                   confirmed={confirmation.status !== 'idle'}
                   locked={locked}
+                  getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
                 />
               )}
             </div>
@@ -1346,11 +1441,23 @@ function SpecTaskScreen({
         <div className={`sentence-builder ${confirmation.status === 'correct' ? 'confirmed-correct' : confirmation.status === 'wrong' ? 'confirmed-wrong' : ''}`}>
           <div className="sentence-built">
             {ordered.length
-              ? ordered.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => current.filter((_, i) => i !== index))}>{token}</button>)
+              ? ordered.map((token, index) => {
+                  const tokenAudio = getTextAudio(screen, token, voicePreset);
+                  return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={locked} onClick={() => {
+                    if (tokenAudio) playLessonAudio(tokenAudio);
+                    setOrder(current => current.filter((_, i) => i !== index));
+                  }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+                })
               : <span>Нажимай на элементы по порядку</span>}
           </div>
           <div className="sentence-tokens">
-            {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
+            {remaining.map((token, index) => {
+              const tokenAudio = getTextAudio(screen, token, voicePreset);
+              return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={locked} onClick={() => {
+                if (tokenAudio) playLessonAudio(tokenAudio);
+                setOrder(current => [...current, token]);
+              }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+            })}
           </div>
         </div>
       </div>
@@ -1479,6 +1586,10 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   const screen = screens[step];
   const screenAudio = getScreenAudio(screen, voicePreset);
+
+  useEffect(() => {
+    preloadLessonMedia(lesson, voicePreset);
+  }, [lesson?.id, lesson?.content, voicePreset]);
 
   useEffect(() => {
     setAnswers({});
@@ -1657,6 +1768,16 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       setConfirmation({ status: 'correct' });
       setSessionStats(current => ({ ...current, correctChecks: current.correctChecks + 1 }));
       playUiSound('success');
+
+      const completedLine = screen.type === 'order'
+        ? (screen.answer || []).join(' ')
+        : screen.type === 'specTask' && specMode === 'order'
+          ? specOrder.answer.join(' ')
+          : '';
+      const completedLineAudio = completedLine ? getTextAudio(screen, completedLine, voicePreset) : '';
+      if (completedLineAudio) {
+        window.setTimeout(() => playLessonAudio(completedLineAudio), 260);
+      }
     } else {
       setConfirmation({ status: 'wrong' });
       setSessionStats(current => ({ ...current, wrongAttempts: current.wrongAttempts + 1 }));
@@ -1781,12 +1902,20 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             <span className="lesson-eyebrow">{screen.eyebrow}</span>
             <h1>{screen.phrase}</h1>
             <p className="lesson-translation">{screen.translation}</p>
-            <LessonAudioButton url={screenAudio} />
+            <LessonAudioButton url={screenAudio || getTextAudio(screen, screen.phrase, voicePreset)} />
             <div className="lesson-context-note">{screen.sceneText}</div>
             {screen.reply && (
               <div className="lesson-reply">
                 <span>Мини-ответ</span>
                 <strong>{screen.reply}</strong>
+                {getTextAudio(screen, screen.reply, voicePreset) && (
+                  <button
+                    className="lesson-inline-audio"
+                    data-ui-click="off"
+                    onClick={() => playTextAudio(screen, screen.reply, voicePreset)}
+                    title="Послушать"
+                  ><Volume2 size={14} /></button>
+                )}
                 <small>{screen.replyTranslation}</small>
               </div>
             )}
@@ -1806,7 +1935,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           ) : (
             <>
               <div className="lesson-question-word">{screen.prompt}</div>
-              {screenAudio && <LessonAudioButton url={screenAudio} />}
+              <LessonAudioButton url={screenAudio || getTextAudio(screen, screen.prompt, voicePreset)} />
             </>
           )}
           <ChoiceOptions
@@ -1816,6 +1945,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             onSelect={value => setAnswer('single', value)}
             confirmed={confirmation.status !== 'idle'}
             locked={confirmation.status === 'correct'}
+            getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
           />
           {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Верно!</p>}
           {confirmation.status === 'wrong' && <p className="lesson-feedback error">Неверно. Выбери другой вариант и попробуй ещё раз.</p>}
@@ -1835,7 +1965,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <div className="lesson-multi-stack">
             {(screen.items || []).map((item, index) => (
               <div className="lesson-multi-item" key={index}>
-                {item.scene && <SceneArt type={item.scene} compact imageUrl={item.imageUrl || ''} />}
+                {item.scene && <SceneArt type={item.scene} compact imageUrl={item.resolvedImageUrl || item.imageUrl || ''} />}
                 <strong>{item.prompt}</strong>
                 <ChoiceOptions
                   options={item.options}
@@ -1844,6 +1974,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
                   onSelect={value => setAnswer(index, value)}
                   confirmed={confirmation.status !== 'idle'}
                   locked={confirmation.status === 'correct'}
+                  getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
                 />
               </div>
             ))}
@@ -1863,7 +1994,17 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <div className="classify-list">
             {screen.items.map((item, index) => (
               <div className="classify-row" key={item.text}>
-                <strong>{item.text}</strong>
+                <div className="classify-word">
+                  <strong>{item.text}</strong>
+                  {getTextAudio(screen, item.text, voicePreset) && (
+                    <button
+                      className="lesson-inline-audio"
+                      data-ui-click="off"
+                      onClick={() => playTextAudio(screen, item.text, voicePreset)}
+                      title="Послушать слово"
+                    ><Volume2 size={14} /></button>
+                  )}
+                </div>
                 <div>
                   {screen.categories.map(category => (
                     <button
@@ -1903,10 +2044,22 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           {screenAudio && <LessonAudioButton url={screenAudio} />}
           <div className={`sentence-builder ${confirmation.status === 'correct' ? 'confirmed-correct' : confirmation.status === 'wrong' ? 'confirmed-wrong' : ''}`}>
             <div className="sentence-built">
-              {ordered.length ? ordered.map((token, index) => <button key={`${token}-${index}`} disabled={confirmation.status === 'correct'} onClick={() => setOrder(current => current.filter((_, i) => i !== index))}>{token}</button>) : <span>Нажимай на слова по порядку</span>}
+              {ordered.length ? ordered.map((token, index) => {
+                const tokenAudio = getTextAudio(screen, token, voicePreset);
+                return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={confirmation.status === 'correct'} onClick={() => {
+                  if (tokenAudio) playLessonAudio(tokenAudio);
+                  setOrder(current => current.filter((_, i) => i !== index));
+                }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+              }) : <span>Нажимай на слова по порядку</span>}
             </div>
             <div className="sentence-tokens">
-              {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={confirmation.status === 'correct'} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
+              {remaining.map((token, index) => {
+                const tokenAudio = getTextAudio(screen, token, voicePreset);
+                return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={confirmation.status === 'correct'} onClick={() => {
+                  if (tokenAudio) playLessonAudio(tokenAudio);
+                  setOrder(current => [...current, token]);
+                }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+              })}
             </div>
           </div>
           {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Фраза собрана правильно.</p>}
@@ -1923,16 +2076,27 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <p className="lesson-task-lead">{screen.note}</p>
           <LessonAudioButton url={screenAudio} large label="Послушать пример" />
           <div className="pronunciation-list">
-            {screen.phrases.map((phrase, index) => (
-              <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
-                <strong>{phrase}</strong>
-                <VoicePracticeRecorder
-                  compact
-                  done={Boolean(repeated[index])}
-                  onDone={() => setRepeated(prev => ({ ...prev, [index]: true }))}
-                />
-              </div>
-            ))}
+            {screen.phrases.map((phrase, index) => {
+              const phraseAudio = getTextAudio(screen, phrase, voicePreset);
+              return (
+                <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
+                  <strong>{phrase}</strong>
+                  {phraseAudio && (
+                    <button
+                      className="lesson-inline-audio"
+                      data-ui-click="off"
+                      onClick={() => playLessonAudio(phraseAudio)}
+                      title="Послушать образец"
+                    ><Volume2 size={14} /></button>
+                  )}
+                  <VoicePracticeRecorder
+                    compact
+                    done={Boolean(repeated[index])}
+                    onDone={() => setRepeated(prev => ({ ...prev, [index]: true }))}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -1986,7 +2150,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <button className="lesson-exit-btn" onClick={exitLesson}><ChevronLeft size={19} /> <span>К урокам</span></button>
 
         <div className="lesson-step-copy">
-          <span>Урок</span>
+          <span>Задание</span>
           <strong>{step + 1} / {screens.length}</strong>
           <em><Volume2 size={14} /> {getVoicePreset(voicePreset).name}</em>
         </div>
