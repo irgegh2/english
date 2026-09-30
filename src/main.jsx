@@ -1213,6 +1213,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-progress-area">
           <div className="lesson-screen-progress"><i style={{ width: `${lessonPercent}%` }} /></div>
           <strong>{lessonPercent}%</strong>
+          {LESSON_TEST_MODE && (
+            <button className="lesson-test-sound" data-ui-click="off" onClick={() => playUiSound('end')} title="Проверить звук завершения">
+              END
+            </button>
+          )}
           <button className="lesson-fullscreen-btn" onClick={toggleFullscreen} title={isFullscreen ? 'Выйти из полного экрана' : 'На весь экран'}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
           </button>
