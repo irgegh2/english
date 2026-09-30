@@ -81,6 +81,35 @@ function getVoicePreset(id, options = VOICE_PRESETS) {
   return options.find(voice => voice.id === id) || options[0] || VOICE_PRESETS[0];
 }
 
+const waitForApi = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+
+async function fetchJsonWithStartupRetry(url, attempts = 5) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return response.json();
+
+      const data = await response.json().catch(() => ({}));
+      const retryableStartupError = response.status >= 500
+        && !data.error
+        && attempt < attempts - 1;
+
+      if (!retryableStartupError) {
+        throw new Error(data.error || `Request failed: ${response.status}`);
+      }
+    } catch (error) {
+      lastError = error;
+      if (attempt >= attempts - 1) break;
+    }
+
+    await waitForApi(250 * (attempt + 1));
+  }
+
+  throw lastError || new Error('API unavailable');
+}
+
 function Logo() {
   return (
     <button className="brand-wrap" type="button" aria-label="Складно">
@@ -1434,9 +1463,9 @@ function App() {
       setCourseError('');
 
       const [dashboardResult, modulesResult, voicesResult] = await Promise.allSettled([
-        fetch('/api/dashboard').then(response => response.ok ? response.json() : Promise.reject(new Error('dashboard'))),
-        fetch('/api/course/modules').then(response => response.ok ? response.json() : Promise.reject(new Error('modules'))),
-        fetch('/api/voices').then(response => response.ok ? response.json() : Promise.reject(new Error('voices'))),
+        fetchJsonWithStartupRetry('/api/dashboard'),
+        fetchJsonWithStartupRetry('/api/course/modules'),
+        fetchJsonWithStartupRetry('/api/voices'),
       ]);
 
       if (!active) return;
