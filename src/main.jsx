@@ -933,7 +933,7 @@ function inferSpecQuestions(screen) {
         multiple = true;
         break;
       }
-      if (/^(правильный ответ|правильная фраза|правильный вариант|ответ|неправильная фраза)$/i.test(value)) {
+      if (/^(правильный ответ|правильная фраза|правильный вариант|правильный|ответ|неправильная фраза|неправильная)$/i.test(value)) {
         markerIndex = look;
         break;
       }
@@ -1244,6 +1244,26 @@ function SpecTaskScreen({
           <div className="sentence-tokens">
             {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'dialog') {
+    const lines = screen.body || screen.lead || [];
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} large label="Послушать диалог" />
+        <div className="spec-dialogue">
+          {lines.slice(0, 30).map((line, index) => {
+            const match = String(line).match(/^([AB]):\s*(.*)$/);
+            if (match) {
+              return <div className={`spec-dialogue-line speaker-${match[1].toLowerCase()}`} key={index}><span>{match[1]}</span><p>{match[2]}</p></div>;
+            }
+            return <p className="spec-dialogue-note" key={index}>{line}</p>;
+          })}
         </div>
       </div>
     );
