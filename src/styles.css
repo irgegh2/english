@@ -3791,3 +3791,36 @@ body.lesson-scroll-locked{
   cursor:pointer;
 }
 .lesson-test-sound:hover{background:#ffefb8}
+
+
+/* ===== One-click voice selection / preview ===== */
+.voice-card-button{
+  width:100%;
+  appearance:none;
+  font:inherit;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+}
+.voice-card-button .voice-select{
+  cursor:inherit;
+}
+.voice-card-audio-state{
+  min-height:28px;
+  margin:2px 3px 0;
+  border-top:1px solid #edf1f0;
+  padding-top:7px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#6e8186;
+  font-size:8px;
+  font-weight:800;
+}
+.voice-card-button:hover .voice-card-audio-state{
+  color:#087f75;
+}
+.voice-card-button:focus-visible{
+  outline:3px solid rgba(33,185,167,.18);
+  outline-offset:2px;
+}
