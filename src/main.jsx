@@ -975,6 +975,20 @@ function inferSpecQuestions(screen) {
   return questions;
 }
 
+function inferSpecExpectedText(screen) {
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const marker = lines[index].replace(/:$/, '').trim();
+    if (!/^(результат|правильный ответ|ответ)$/i.test(marker)) continue;
+    for (let look = index + 1; look < Math.min(lines.length, index + 5); look += 1) {
+      const value = lines[look].replace(/^•\s*/, '').trim();
+      if (!value || /^(что |метод|важно|зачем)/i.test(value)) continue;
+      return value;
+    }
+  }
+  return '';
+}
+
 function MultiSelectOptions({ options, answers = [], selected = [], onSelect, confirmed = false, locked = false }) {
   const selectedValues = Array.isArray(selected) ? selected : [];
 
@@ -1026,7 +1040,8 @@ function SpecTaskScreen({
   const audioUrls = getScreenAudioSequence(screen, voicePreset);
   const questions = inferSpecQuestions(screen);
   const pairs = screen.pairs || [];
-  const mode = screen.mode || 'info';
+  const sourceMode = screen.mode || 'info';
+  const mode = questions.length && ['info', 'dialog', 'text'].includes(sourceMode) ? 'choice' : sourceMode;
   const displayLines = (mode === 'info' || mode === 'study' || mode === 'dialog' || mode === 'speaking' || mode === 'text')
     ? (screen.body || screen.lead || [])
     : (screen.lead || []);
@@ -1094,6 +1109,8 @@ function SpecTaskScreen({
             </div>
           ))}
         </div>
+        {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Всё верно!</p>}
+        {confirmation.status === 'wrong' && <p className="lesson-feedback error">Есть ошибка. Исправь ответ и попробуй ещё раз.</p>}
       </div>
     );
   }
@@ -1173,6 +1190,7 @@ function SpecTaskScreen({
   }
 
   if (mode === 'text') {
+    const expectedText = inferSpecExpectedText(screen);
     return (
       <div className="lesson-task spec-task">
         <span className="lesson-eyebrow">{screen.eyebrow}</span>
@@ -1185,6 +1203,12 @@ function SpecTaskScreen({
           placeholder="Напиши свой ответ…"
           rows={4}
         />
+        {expectedText && confirmation.status === 'correct' && (
+          <p className="lesson-feedback success"><Check size={15} /> Верно: {expectedText}</p>
+        )}
+        {expectedText && confirmation.status === 'wrong' && (
+          <p className="lesson-feedback error">Проверь написание и попробуй ещё раз.</p>
+        )}
       </div>
     );
   }
@@ -1286,11 +1310,14 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   const specQuestions = screen.type === 'specTask' ? inferSpecQuestions(screen) : [];
   const specPairs = screen.type === 'specTask' ? (screen.pairs || []) : [];
-  const specMode = screen.type === 'specTask' ? (screen.mode || 'info') : '';
+  const specSourceMode = screen.type === 'specTask' ? (screen.mode || 'info') : '';
+  const specMode = specQuestions.length && ['info', 'dialog', 'text'].includes(specSourceMode) ? 'choice' : specSourceMode;
+  const specExpectedText = screen.type === 'specTask' && specMode === 'text' ? inferSpecExpectedText(screen) : '';
   const specCheckable = screen.type === 'specTask' && (
     (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length > 0) ||
     (['match', 'classify'].includes(specMode) && specPairs.length > 0) ||
-    (specMode === 'order' && (screen.tokens || []).length > 0 && (screen.orderAnswer || []).length > 0)
+    (specMode === 'order' && (screen.tokens || []).length > 0 && (screen.orderAnswer || []).length > 0) ||
+    (specMode === 'text' && Boolean(specExpectedText))
   );
   const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type) || specCheckable;
 
@@ -1334,6 +1361,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       if (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length) return allMultiAnswered(specQuestions);
       if (['match', 'classify'].includes(specMode) && specPairs.length) return specPairs.every((_, index) => Boolean(answers[index]));
       if (specMode === 'order') return ordered.length === (screen.orderAnswer || []).length;
+      if (specMode === 'text' && specExpectedText) return Boolean(String(answers.text || '').trim());
     }
     return true;
   })();
@@ -1349,6 +1377,9 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         return specPairs.every((pair, index) => answers[index] === pair.slice(1).join(' → '));
       }
       if (specMode === 'order') return ordered.join(' | ') === (screen.orderAnswer || []).join(' | ');
+      if (specMode === 'text' && specExpectedText) {
+        return normalizeAnswerText(answers.text) === normalizeAnswerText(specExpectedText);
+      }
     }
     return true;
   })();
@@ -1359,7 +1390,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (screen.type === 'pronunciation') return (screen.phrases || []).every((_, index) => repeated[index]);
     if (screen.type === 'speakingFinal') return (screen.items || []).every((_, index) => spoken[index]);
     if (screen.type === 'specTask' && specMode === 'speaking') return Boolean(spoken[0]);
-    if (screen.type === 'specTask' && specMode === 'text') return Boolean(String(answers.text || '').trim());
+    if (screen.type === 'specTask' && specMode === 'text' && !specExpectedText) return Boolean(String(answers.text || '').trim());
     return true;
   })();
 
