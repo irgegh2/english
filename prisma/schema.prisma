@@ -53,8 +53,8 @@ model Lesson {
   id           Int          @id @default(autoincrement())
   moduleId     Int
   module       CourseModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  blockId      Int?
-  block        CourseBlock? @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  blockId      Int
+  block        CourseBlock  @relation(fields: [blockId], references: [id], onDelete: Cascade)
   position     Int
   title        String
   tagPrimary   String
