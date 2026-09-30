@@ -567,10 +567,48 @@ function playUiSoundFallback(name) {
   } catch {}
 }
 
+function getHtmlUiSound(name) {
+  if (typeof window === 'undefined') return null;
+  if (htmlUiSounds.has(name)) return htmlUiSounds.get(name);
+
+  const config = UI_SOUNDS[name];
+  if (!config) return null;
+
+  const audio = new Audio(config.url);
+  audio.preload = 'auto';
+  audio.volume = config.volume;
+  audio.load();
+  htmlUiSounds.set(name, audio);
+  return audio;
+}
+
+function playUiSoundImmediate(name) {
+  const audio = getHtmlUiSound(name);
+  const config = UI_SOUNDS[name];
+  if (!audio || !config) return false;
+
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = config.volume;
+    const promise = audio.play();
+    if (promise?.catch) {
+      promise.catch(() => { void playUiSound(name); });
+    }
+    return true;
+  } catch {
+    void playUiSound(name);
+    return false;
+  }
+}
+
 function preloadUiSounds() {
   if (typeof window === 'undefined') return;
   getUiAudioContext();
-  Object.keys(UI_SOUNDS).forEach(name => { void loadUiSound(name); });
+  Object.keys(UI_SOUNDS).forEach(name => {
+    void loadUiSound(name);
+    getHtmlUiSound(name);
+  });
 }
 
 function unlockUiAudio() {
@@ -810,6 +848,51 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   }, [step]);
 
   useEffect(() => {
+    const scrollY = window.scrollY;
+    const html = document.documentElement;
+    const body = document.body;
+
+    const previous = {
+      htmlOverflow: html.style.overflow,
+      htmlOverscroll: html.style.overscrollBehavior,
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyLeft: body.style.left,
+      bodyRight: body.style.right,
+      bodyWidth: body.style.width,
+      bodyOverscroll: body.style.overscrollBehavior,
+    };
+
+    html.classList.add('lesson-scroll-locked');
+    body.classList.add('lesson-scroll-locked');
+    html.style.overflow = 'hidden';
+    html.style.overscrollBehavior = 'none';
+    body.style.overflow = 'hidden';
+    body.style.position = 'fixed';
+    body.style.top = `-${scrollY}px`;
+    body.style.left = '0';
+    body.style.right = '0';
+    body.style.width = '100%';
+    body.style.overscrollBehavior = 'none';
+
+    return () => {
+      html.classList.remove('lesson-scroll-locked');
+      body.classList.remove('lesson-scroll-locked');
+      html.style.overflow = previous.htmlOverflow;
+      html.style.overscrollBehavior = previous.htmlOverscroll;
+      body.style.overflow = previous.bodyOverflow;
+      body.style.position = previous.bodyPosition;
+      body.style.top = previous.bodyTop;
+      body.style.left = previous.bodyLeft;
+      body.style.right = previous.bodyRight;
+      body.style.width = previous.bodyWidth;
+      body.style.overscrollBehavior = previous.bodyOverscroll;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
+  useEffect(() => {
     const syncFullscreen = () => {
       const active = document.fullscreenElement || document.webkitFullscreenElement;
       setIsFullscreen(active === lessonRunnerRef.current);
@@ -884,9 +967,10 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     onProgress(progress);
     if (step >= screens.length - 1) {
       completionSoundPlayedRef.current = true;
-      void playUiSound('end').then(started => {
-        if (!started) playUiSoundFallback('end');
-      });
+      const started = playUiSoundImmediate('end');
+      if (!started) {
+        playUiSoundFallback('end');
+      }
       setFinished(true);
       return;
     }
