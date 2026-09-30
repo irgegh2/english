@@ -135,6 +135,27 @@ app.get('/api/course/blocks/:id', async (req, res) => {
   }
 });
 
+app.get('/api/course/lessons/:id', async (req, res) => {
+  const id = Number(req.params.id);
+
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid lesson id' });
+
+  try {
+    const lesson = await prisma.lesson.findUnique({
+      where: { id },
+      include: {
+        module: true,
+        block: true,
+      },
+    });
+
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+    res.json(lesson);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.patch('/api/lessons/:id/progress', async (req, res) => {
   const id = Number(req.params.id);
   const progress = Math.max(0, Math.min(100, Number(req.body.progress ?? 0)));
