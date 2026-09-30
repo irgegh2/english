@@ -975,6 +975,68 @@ function inferSpecQuestions(screen) {
   return questions;
 }
 
+function inferSpecPairs(screen) {
+  if (Array.isArray(screen?.pairs) && screen.pairs.length) return screen.pairs;
+
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  const pairs = [];
+
+  for (let index = 1; index < lines.length; index += 1) {
+    if (!lines[index].startsWith('→')) continue;
+    const left = lines[index - 1].trim();
+    const right = lines[index].replace(/^→\s*/, '').trim();
+    if (!left || !right || /^(ситуация|следующее|цель|что |важно)/i.test(left)) continue;
+    pairs.push([left, right]);
+  }
+
+  return pairs;
+}
+
+function inferSpecOrder(screen) {
+  if (Array.isArray(screen?.tokens) && screen.tokens.length && Array.isArray(screen?.orderAnswer) && screen.orderAnswer.length) {
+    return { tokens: screen.tokens, answer: screen.orderAnswer };
+  }
+
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  let tokens = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    if (!/^(карточки|элементы|слова)\s*:?$/i.test(lines[index])) continue;
+    const next = [];
+    for (let look = index + 1; look < lines.length && lines[look].startsWith('• '); look += 1) {
+      next.push(lines[look].replace(/^•\s*/, '').trim());
+    }
+    if (next.length >= 2) {
+      tokens = next;
+      break;
+    }
+  }
+
+  if (!tokens.length) return { tokens: [], answer: [] };
+
+  let answerText = '';
+  for (let index = 0; index < lines.length; index += 1) {
+    const marker = lines[index].replace(/:$/, '').trim();
+    if (!/^(правильно|правильный порядок|правильная последовательность|нужно расположить их|ответ|результат)$/i.test(marker)) continue;
+    const next = lines[index + 1]?.replace(/^•\s*/, '').trim();
+    if (next) {
+      answerText = next;
+      break;
+    }
+  }
+
+  if (!answerText) return { tokens: [], answer: [] };
+
+  const normalizedAnswer = answerText.replace(/[.!?]+$/, '').trim();
+  const allSingleLetters = tokens.every(token => /^[A-Za-z]$/.test(token));
+  const answer = allSingleLetters && /^[A-Za-z]+$/.test(normalizedAnswer)
+    ? normalizedAnswer.split('')
+    : normalizedAnswer.split(/\s+/).filter(Boolean);
+
+  if (answer.length !== tokens.length) return { tokens: [], answer: [] };
+  return { tokens, answer };
+}
+
 function inferSpecExpectedText(screen) {
   const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -1123,9 +1185,15 @@ function SpecTaskScreen({
     : Array.isArray(screen?.audioPhrases) ? screen.audioPhrases.length : (screen?.audioPhrase ? 1 : 0);
   const missingAudioCount = Math.max(0, expectedAudioCount - audioUrls.length);
   const questions = inferSpecQuestions(screen);
-  const pairs = screen.pairs || [];
+  const pairs = inferSpecPairs(screen);
+  const inferredOrder = inferSpecOrder(screen);
   const sourceMode = screen.mode || 'info';
-  const mode = questions.length && ['info', 'dialog', 'text'].includes(sourceMode) ? 'choice' : sourceMode;
+  const lacksNativeStructure =
+    (['match', 'classify'].includes(sourceMode) && !pairs.length) ||
+    (sourceMode === 'order' && !inferredOrder.tokens.length);
+  const mode = questions.length && (['info', 'dialog', 'text'].includes(sourceMode) || lacksNativeStructure)
+    ? 'choice'
+    : sourceMode;
   const displayLines = (mode === 'info' || mode === 'study' || mode === 'dialog' || mode === 'speaking' || mode === 'text')
     ? (screen.body || screen.lead || [])
     : (screen.lead || []);
@@ -1233,10 +1301,10 @@ function SpecTaskScreen({
     );
   }
 
-  if (mode === 'order' && screen.tokens?.length && screen.orderAnswer?.length) {
-    const remaining = screen.tokens.filter((token, index) => {
+  if (mode === 'order' && inferredOrder.tokens.length && inferredOrder.answer.length) {
+    const remaining = inferredOrder.tokens.filter((token, index) => {
       const selectedCount = ordered.filter(x => x === token).length;
-      const before = screen.tokens.slice(0, index + 1).filter(x => x === token).length;
+      const before = inferredOrder.tokens.slice(0, index + 1).filter(x => x === token).length;
       return selectedCount < before;
     });
 
@@ -1422,14 +1490,20 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   if (!screen) return null;
 
   const specQuestions = screen.type === 'specTask' ? inferSpecQuestions(screen) : [];
-  const specPairs = screen.type === 'specTask' ? (screen.pairs || []) : [];
+  const specPairs = screen.type === 'specTask' ? inferSpecPairs(screen) : [];
+  const specOrder = screen.type === 'specTask' ? inferSpecOrder(screen) : { tokens: [], answer: [] };
   const specSourceMode = screen.type === 'specTask' ? (screen.mode || 'info') : '';
-  const specMode = specQuestions.length && ['info', 'dialog', 'text'].includes(specSourceMode) ? 'choice' : specSourceMode;
+  const specLacksNativeStructure =
+    (['match', 'classify'].includes(specSourceMode) && !specPairs.length) ||
+    (specSourceMode === 'order' && !specOrder.tokens.length);
+  const specMode = specQuestions.length && (['info', 'dialog', 'text'].includes(specSourceMode) || specLacksNativeStructure)
+    ? 'choice'
+    : specSourceMode;
   const specExpectedText = screen.type === 'specTask' && specMode === 'text' ? inferSpecExpectedText(screen) : '';
   const specCheckable = screen.type === 'specTask' && (
     (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length > 0) ||
     (['match', 'classify'].includes(specMode) && specPairs.length > 0) ||
-    (specMode === 'order' && (screen.tokens || []).length > 0 && (screen.orderAnswer || []).length > 0) ||
+    (specMode === 'order' && specOrder.tokens.length > 0 && specOrder.answer.length > 0) ||
     (specMode === 'text' && Boolean(specExpectedText))
   );
   const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type) || specCheckable;
@@ -1473,7 +1547,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (screen.type === 'specTask') {
       if (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length) return allMultiAnswered(specQuestions);
       if (['match', 'classify'].includes(specMode) && specPairs.length) return specPairs.every((_, index) => Boolean(answers[index]));
-      if (specMode === 'order') return ordered.length === (screen.orderAnswer || []).length;
+      if (specMode === 'order') return ordered.length === specOrder.answer.length;
       if (specMode === 'text' && specExpectedText) return Boolean(String(answers.text || '').trim());
     }
     return true;
@@ -1489,7 +1563,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       if (['match', 'classify'].includes(specMode) && specPairs.length) {
         return specPairs.every((pair, index) => answers[index] === pair.slice(1).join(' → '));
       }
-      if (specMode === 'order') return ordered.join(' | ') === (screen.orderAnswer || []).join(' | ');
+      if (specMode === 'order') return ordered.join(' | ') === specOrder.answer.join(' | ');
       if (specMode === 'text' && specExpectedText) {
         return normalizeAnswerText(answers.text) === normalizeAnswerText(specExpectedText);
       }
