@@ -806,13 +806,14 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       bodyOverscroll: body.style.overscrollBehavior,
     };
 
+    window.scrollTo(0, 0);
     html.classList.add('lesson-scroll-locked');
     body.classList.add('lesson-scroll-locked');
     html.style.overflow = 'hidden';
     html.style.overscrollBehavior = 'none';
     body.style.overflow = 'hidden';
     body.style.position = 'fixed';
-    body.style.top = `-${scrollY}px`;
+    body.style.top = '0';
     body.style.left = '0';
     body.style.right = '0';
     body.style.width = '100%';
