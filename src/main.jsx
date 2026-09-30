@@ -1118,6 +1118,10 @@ function SpecTaskScreen({
   confirmation,
 }) {
   const audioUrls = getScreenAudioSequence(screen, voicePreset);
+  const expectedAudioCount = Array.isArray(screen?.resolvedAudioSequence)
+    ? screen.resolvedAudioSequence.length
+    : Array.isArray(screen?.audioPhrases) ? screen.audioPhrases.length : (screen?.audioPhrase ? 1 : 0);
+  const missingAudioCount = Math.max(0, expectedAudioCount - audioUrls.length);
   const questions = inferSpecQuestions(screen);
   const pairs = screen.pairs || [];
   const sourceMode = screen.mode || 'info';
@@ -1143,8 +1147,10 @@ function SpecTaskScreen({
         {screen.title !== screen.focus && <h2 className="spec-subtitle">{screen.title}</h2>}
         <LessonAudioSequenceButton urls={audioUrls} large label="Послушать" />
         {renderLines(displayLines)}
-        {!audioUrls.length && screen.audioPhrases?.length > 0 && (
-          <div className="spec-audio-missing">Аудио для этого материала ещё не добавлено в аудиословарь.</div>
+        {missingAudioCount > 0 && (
+          <div className="spec-audio-missing">
+            Аудио готово не полностью: {audioUrls.length} из {expectedAudioCount}. Недостающие записи добавь в аудиословарь.
+          </div>
         )}
       </div>
     );
@@ -1158,7 +1164,11 @@ function SpecTaskScreen({
         {mode === 'listening' && (
           <>
             <LessonAudioSequenceButton urls={audioUrls} large label={audioUrls.length > 1 ? 'Послушать последовательность' : 'Послушать'} />
-            {!audioUrls.length && screen.audioPhrases?.length > 0 && <div className="spec-audio-missing">Нужные записи пока не добавлены в аудиословарь.</div>}
+            {missingAudioCount > 0 && (
+              <div className="spec-audio-missing">
+                Для выбранного голоса готово {audioUrls.length} из {expectedAudioCount} аудиофрагментов.
+              </div>
+            )}
           </>
         )}
         {mode === 'reading' && renderLines(displayLines)}
