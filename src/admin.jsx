@@ -1124,10 +1124,21 @@ function StorageSettingsPanel({ settings, setSettings, loading, onReload, onSave
       <section className="admin-editor-section">
         <div className="admin-editor-title">
           <div><strong>PostgreSQL REG.RU</strong><span>Подключение базы задаётся через DATABASE_URL</span></div>
+          <span className={`admin-storage-secret-state ${draft.database?.cloud ? 'ready' : ''}`}>
+            {draft.database?.cloud ? <><Check size={14} /> REG.RU подключена</> : 'Сейчас не REG.RU'}
+          </span>
         </div>
         <p className="admin-storage-explain">
           База данных переключается не через браузер, а через локальный .env, чтобы пароль PostgreSQL не попадал в админский API. Скрипт миграции переносит текущую базу целиком и затем меняет DATABASE_URL на облачный PostgreSQL.
         </p>
+        {draft.database?.host && (
+          <div className="admin-storage-db-grid">
+            <span><small>Хост</small><strong>{draft.database.host}</strong></span>
+            <span><small>Порт</small><strong>{draft.database.port}</strong></span>
+            <span><small>База</small><strong>{draft.database.database}</strong></span>
+            <span><small>Пользователь</small><strong>{draft.database.user}</strong></span>
+          </div>
+        )}
       </section>
     </div>
   );
