@@ -516,6 +516,11 @@ function collectLessonMediaUrls(lesson, presetId) {
       if (url) audio.add(url);
     }
 
+    for (const item of screen?.resolvedListeningAudioSequence || []) {
+      const url = item?.audioFiles?.[presetId];
+      if (url) audio.add(url);
+    }
+
     for (const files of Object.values(screen?.resolvedAudioByText || {})) {
       const url = files?.[presetId];
       if (url) audio.add(url);
@@ -733,8 +738,26 @@ function normalizeAutoMediaKey(value) {
     .replace(/\s+/g, ' ');
 }
 
+function getListeningAudioSequence(screen, presetId) {
+  const direct = screen?.audioFiles?.[presetId] || '';
+  if (direct) return [direct];
+
+  const fallback = Array.isArray(screen?.resolvedListeningAudioSequence)
+    ? screen.resolvedListeningAudioSequence
+      .map(item => item?.audioFiles?.[presetId] || '')
+      .filter(Boolean)
+    : [];
+  return fallback;
+}
+
 function getScreenAudio(screen, presetId) {
-  return screen?.audioFiles?.[presetId] || screen?.resolvedAudioFiles?.[presetId] || '';
+  const direct = screen?.audioFiles?.[presetId] || '';
+  if (direct) return direct;
+
+  const listeningFallback = getListeningAudioSequence(screen, presetId);
+  if (listeningFallback.length) return listeningFallback[0];
+
+  return screen?.resolvedAudioFiles?.[presetId] || '';
 }
 
 function getTextAudio(screen, text, presetId) {
@@ -747,8 +770,8 @@ function playTextAudio(screen, text, presetId) {
 }
 
 function getScreenAudioSequence(screen, presetId) {
-  const direct = screen?.audioFiles?.[presetId] || '';
-  if (direct) return [direct];
+  const listening = getListeningAudioSequence(screen, presetId);
+  if (listening.length) return listening;
 
   const sequence = Array.isArray(screen?.resolvedAudioSequence)
     ? screen.resolvedAudioSequence
@@ -1931,7 +1954,9 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           {screen.type === 'listeningChoice' ? (
-            <LessonAudioButton url={screenAudio} large label="Воспроизвести" />
+            screenAudio
+              ? <LessonAudioButton url={screenAudio} large label="Прослушать запись" />
+              : <div className="lesson-listening-missing"><Volume2 size={20} /><span>Аудио задания ещё не загружено и fallback в аудиословаре не найден.</span></div>
           ) : (
             <>
               <div className="lesson-question-word">{screen.prompt}</div>
@@ -1960,7 +1985,9 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           {screen.type === 'listeningDialog'
-            ? <LessonAudioButton url={screenAudio} large label="Послушать диалог" />
+            ? getScreenAudioSequence(screen, voicePreset).length
+              ? <LessonAudioSequenceButton urls={getScreenAudioSequence(screen, voicePreset)} large label="Послушать диалог" />
+              : <div className="lesson-listening-missing"><Volume2 size={20} /><span>Аудио диалога ещё не загружено и fallback в аудиословаре не найден.</span></div>
             : screenAudio && <LessonAudioButton url={screenAudio} />}
           <div className="lesson-multi-stack">
             {(screen.items || []).map((item, index) => (
