@@ -4,6 +4,42 @@ import { blockOneLessonsTwoToSix } from '../prisma/block1-lessons-2-6.js';
 
 const prisma = new PrismaClient();
 
+const normalizeAudioPhrase = value => String(value || '')
+  .normalize('NFKC')
+  .trim()
+  .toLocaleLowerCase('en-US')
+  .replace(/\s+/g, ' ');
+
+const expandReusableAudioPhrase = value => {
+  const phrase = String(value || '').trim();
+  if (!phrase) return [];
+  const parts = phrase.split(/\s*[—–-]\s*/).map(part => part.trim()).filter(Boolean);
+  if (parts.length > 1 && parts.every(part => /^[A-Za-z]$/.test(part))) return parts;
+  return [phrase];
+};
+
+function collectLessonAudioPhrases() {
+  const phrases = new Map();
+
+  for (const lesson of blockOneLessonsTwoToSix) {
+    for (const screen of lesson.content?.screens || []) {
+      const raw = [
+        ...expandReusableAudioPhrase(screen.audioPhrase),
+        ...(Array.isArray(screen.audioPhrases)
+          ? screen.audioPhrases.flatMap(expandReusableAudioPhrase)
+          : []),
+      ];
+
+      for (const phrase of raw) {
+        const key = normalizeAudioPhrase(phrase);
+        if (key && !phrases.has(key)) phrases.set(key, phrase);
+      }
+    }
+  }
+
+  return phrases;
+}
+
 async function main() {
   const moduleOne = await prisma.courseModule.findUnique({ where: { position: 1 } });
   if (!moduleOne) throw new Error('Модуль 1 не найден.');
@@ -42,8 +78,21 @@ async function main() {
     }
   }
 
+  const phrases = collectLessonAudioPhrases();
+  let createdPhrases = 0;
+
+  for (const [key, text] of phrases) {
+    const existing = await prisma.audioPhrase.findUnique({ where: { key } });
+    if (existing) continue;
+    await prisma.audioPhrase.create({
+      data: { text, key, audioFiles: {} },
+    });
+    createdPhrases += 1;
+  }
+
   const totalScreens = blockOneLessonsTwoToSix.reduce((sum, lesson) => sum + lesson.content.screens.length, 0);
   console.log(`Готово: уроки 2–6 синхронизированы. Экранов: ${totalScreens}.`);
+  console.log(`Аудиословарь: добавлено ${createdPhrases} новых фраз/букв без файлов; существующие записи и аудио не изменены.`);
 }
 
 try {
