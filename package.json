@@ -17,7 +17,8 @@
     "db:migrate:reg": "bash scripts/migrate-to-reg-cloud.sh",
     "cleanup:local-cloud": "node scripts/cleanup-local-after-cloud.mjs",
     "cleanup:hello-audio": "node scripts/cleanup-unused-hello-audio.mjs",
-    "cleanup:orphan-audio": "node scripts/cleanup-orphan-s3-audio.mjs"
+    "cleanup:orphan-audio": "node scripts/cleanup-orphan-s3-audio.mjs",
+    "content:sync:block1": "node scripts/sync-block1-lessons.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
