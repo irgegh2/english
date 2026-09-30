@@ -1010,6 +1010,7 @@ function App() {
       .then(([dashboardData, modulesData]) => {
         setDashboard(dashboardData);
         setProfile(dashboardData.profile);
+        setVoicePreset(dashboardData.profile.voicePreset || 'ella');
         setModules(modulesData);
       })
       .catch(() => {})
@@ -1023,6 +1024,26 @@ function App() {
   useEffect(() => {
     try { window.localStorage.setItem('skladno-voice', voicePreset); } catch {}
   }, [voicePreset]);
+
+  const changeVoicePreset = async nextVoice => {
+    setVoicePreset(nextVoice);
+    try { window.localStorage.setItem('skladno-voice', nextVoice); } catch {}
+
+    try {
+      const response = await fetch('/api/profile/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ voicePreset: nextVoice }),
+      });
+      if (response.ok) {
+        const updatedProfile = await response.json();
+        setProfile(updatedProfile);
+        setDashboard(current => current ? { ...current, profile: updatedProfile } : current);
+      }
+    } catch {
+      // Local preference still works while the API is unavailable.
+    }
+  };
 
   const navigateSection = next => {
     if (next === section) return;
@@ -1225,7 +1246,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Topbar profile={profile} section={section} onSectionChange={navigateSection} voicePreset={voicePreset} onVoiceChange={setVoicePreset} />
+      <Topbar profile={profile} section={section} onSectionChange={navigateSection} voicePreset={voicePreset} onVoiceChange={changeVoicePreset} />
       <div className="layout">
         <Sidebar
           section={renderedSection}
