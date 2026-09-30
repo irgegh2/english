@@ -4920,6 +4920,12 @@ export const blockOneLessonsTwoToSix = [
             "• D",
             "• E",
             "Не четыре карточки на одном экране — каждая по отдельности."
+          ],
+          "audioPhrases": [
+            "B",
+            "C",
+            "D",
+            "E"
           ]
         },
         {
@@ -4945,6 +4951,12 @@ export const blockOneLessonsTwoToSix = [
             "• V",
             "Что важно",
             "Это одна из самых трудных слуховых групп, поэтому после 3–4 букв обязательно вставлять практику."
+          ],
+          "audioPhrases": [
+            "G",
+            "P",
+            "T",
+            "V"
           ]
         },
         {
@@ -5047,6 +5059,12 @@ export const blockOneLessonsTwoToSix = [
             "• L",
             "• M",
             "• N"
+          ],
+          "audioPhrases": [
+            "F",
+            "L",
+            "M",
+            "N"
           ]
         },
         {
@@ -5064,6 +5082,10 @@ export const blockOneLessonsTwoToSix = [
             "Отдельные карточки:",
             "• S",
             "• X"
+          ],
+          "audioPhrases": [
+            "S",
+            "X"
           ]
         },
         {
@@ -5355,6 +5377,34 @@ export const blockOneLessonsTwoToSix = [
             "Можно последовательно подсвечивать буквы и проигрывать их названия.",
             "Важно",
             "Это обзор, а не обязательное заучивание порядка."
+          ],
+          "audioPhrases": [
+            "A",
+            "B",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "H",
+            "I",
+            "J",
+            "K",
+            "L",
+            "M",
+            "N",
+            "O",
+            "P",
+            "Q",
+            "R",
+            "S",
+            "T",
+            "U",
+            "V",
+            "W",
+            "X",
+            "Y",
+            "zed"
           ]
         },
         {
