@@ -530,35 +530,29 @@ function primeUiSounds() {
   if (uiSoundsPrimed || typeof window === 'undefined') return;
   uiSoundsPrimed = true;
 
-  Object.keys(UI_SOUNDS).forEach(name => {
-    getUiSoundPool(name).forEach(audio => {
-      try {
-        const previousMuted = audio.muted;
-        const previousVolume = audio.volume;
-        audio.muted = true;
-        audio.volume = 0;
-        audio.currentTime = 0;
+  Object.values(UI_SOUNDS).forEach(config => {
+    try {
+      const warmup = new Audio();
+      warmup.preload = 'auto';
+      warmup.src = config.url;
+      warmup.muted = true;
+      warmup.volume = 0;
+      warmup.load();
 
-        const stop = () => {
-          try {
-            audio.pause();
-            audio.currentTime = 0;
-            audio.muted = previousMuted;
-            audio.volume = previousVolume;
-          } catch {}
-        };
+      const stop = () => {
+        try {
+          warmup.pause();
+          warmup.currentTime = 0;
+          warmup.src = '';
+          warmup.load();
+        } catch {}
+      };
 
-        const promise = audio.play();
-        if (promise?.then) {
-          promise.then(() => window.setTimeout(stop, 35)).catch(() => {
-            audio.muted = previousMuted;
-            audio.volume = previousVolume;
-          });
-        } else {
-          window.setTimeout(stop, 35);
-        }
-      } catch {}
-    });
+      const promise = warmup.play();
+      if (promise?.then) {
+        promise.then(() => window.setTimeout(stop, 45)).catch(() => {});
+      }
+    } catch {}
   });
 }
 
