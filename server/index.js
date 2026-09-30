@@ -289,9 +289,9 @@ function collectScreenAutoAudioTexts(screen) {
   for (const option of screen?.options || []) pushAudioCandidate(texts, option);
   for (const token of screen?.tokens || []) pushAudioCandidate(texts, token);
   for (const phrase of screen?.phrases || []) pushAudioCandidate(texts, phrase);
-  for (const answer of screen?.answer || []) pushAudioCandidate(texts, answer);
-  if (Array.isArray(screen?.answer) && screen.answer.length > 1) {
-    pushAudioCandidate(texts, screen.answer.join(' '));
+  if (Array.isArray(screen?.answer)) {
+    for (const answer of screen.answer) pushAudioCandidate(texts, answer);
+    if (screen.answer.length > 1) pushAudioCandidate(texts, screen.answer.join(' '));
   }
   if (Array.isArray(screen?.orderAnswer) && screen.orderAnswer.length > 1) {
     for (const token of screen.orderAnswer) pushAudioCandidate(texts, token);
