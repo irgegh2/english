@@ -4106,3 +4106,47 @@ body.lesson-scroll-locked{
   border-radius:999px;
   background:#d5e2df;
 }
+
+
+.spec-short-answers{
+  width:min(720px,100%);
+  margin-top:16px;
+  display:grid;
+  gap:9px;
+}
+.spec-short-answers label{
+  min-height:52px;
+  display:grid;
+  grid-template-columns:minmax(110px,.8fr) minmax(180px,1.3fr) 24px;
+  gap:10px;
+  align-items:center;
+  padding:9px 11px;
+  border:1px solid #dbe6e3;
+  border-radius:11px;
+  background:#fafcfb;
+}
+.spec-short-answers label>span{
+  color:#3d5e66;
+  font-size:12px;
+  font-weight:800;
+}
+.spec-short-answers input{
+  min-height:38px;
+  width:100%;
+  border:1px solid #cddbd8;
+  border-radius:9px;
+  padding:0 10px;
+  background:#fff;
+  color:#173f48;
+  font:inherit;
+  outline:none;
+}
+.spec-short-answers input:focus{
+  border-color:#58aa9f;
+  box-shadow:0 0 0 3px rgba(45,151,137,.1);
+}
+.spec-short-answers svg{color:#0c8b7d}
+@media(max-width:620px){
+  .spec-short-answers label{grid-template-columns:1fr 24px}
+  .spec-short-answers label>span{grid-column:1/-1}
+}
