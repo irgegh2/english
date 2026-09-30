@@ -3402,3 +3402,35 @@ svg{stroke-width:1.8}
     animation:none;
   }
 }
+
+
+/* ===== Course API loading failure ===== */
+.course-load-error{
+  min-height:170px;
+  border:1px solid #ead8d3;
+  border-radius:16px;
+  background:#fff8f6;
+  padding:24px;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  justify-content:center;
+  gap:7px;
+}
+.course-load-error strong{font-size:13px;color:#70433c}
+.course-load-error span{font-size:10px;color:#8c6d68}
+.course-load-error button{
+  margin-top:5px;
+  min-height:38px;
+  border:1px solid #dcc6c1;
+  border-radius:10px;
+  background:#fff;
+  color:#77554f;
+  padding:0 12px;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:9px;
+  font-weight:800;
+  cursor:pointer;
+}
