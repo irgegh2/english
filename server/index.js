@@ -56,11 +56,14 @@ const DEFAULT_VOICES = [
 ];
 const VOICE_IDS = new Set(DEFAULT_VOICES.map(voice => voice.id));
 
-const normalizeAudioPhrase = value => asString(value)
+const normalizeLibraryKey = value => asString(value)
   .normalize('NFKC')
   .trim()
   .toLocaleLowerCase('en-US')
   .replace(/\s+/g, ' ');
+
+const normalizeAudioPhrase = normalizeLibraryKey;
+const normalizeMediaName = normalizeLibraryKey;
 
 const sanitizeAudioFiles = value => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -72,33 +75,57 @@ const sanitizeAudioFiles = value => {
   return files;
 };
 
-async function hydrateLessonAudio(lesson) {
+async function hydrateLessonContent(lesson) {
   const content = lesson?.content;
   const screens = content && typeof content === 'object' && Array.isArray(content.screens)
     ? content.screens
     : [];
 
-  const keys = [...new Set(
+  const phraseKeys = [...new Set(
     screens
       .map(screen => normalizeAudioPhrase(screen?.audioPhrase))
       .filter(Boolean)
   )];
 
-  if (!keys.length) return lesson;
+  const mediaIds = [...new Set(
+    screens
+      .map(screen => Number(screen?.mediaId))
+      .filter(Number.isInteger)
+  )];
 
-  const entries = await prisma.audioPhrase.findMany({
-    where: { key: { in: keys } },
-  });
-  const byKey = new Map(entries.map(entry => [entry.key, sanitizeAudioFiles(entry.audioFiles)]));
+  if (!phraseKeys.length && !mediaIds.length) return lesson;
+
+  const [audioEntries, mediaEntries] = await Promise.all([
+    phraseKeys.length
+      ? prisma.audioPhrase.findMany({ where: { key: { in: phraseKeys } } })
+      : [],
+    mediaIds.length
+      ? prisma.mediaAsset.findMany({ where: { id: { in: mediaIds } } })
+      : [],
+  ]);
+
+  const audioByKey = new Map(audioEntries.map(entry => [entry.key, sanitizeAudioFiles(entry.audioFiles)]));
+  const mediaById = new Map(mediaEntries.map(entry => [entry.id, entry]));
 
   return {
     ...lesson,
     content: {
       ...content,
       screens: screens.map(screen => {
-        const key = normalizeAudioPhrase(screen?.audioPhrase);
-        const resolvedAudioFiles = key ? byKey.get(key) : null;
-        return resolvedAudioFiles ? { ...screen, resolvedAudioFiles } : screen;
+        const next = { ...screen };
+
+        const phraseKey = normalizeAudioPhrase(screen?.audioPhrase);
+        const resolvedAudioFiles = phraseKey ? audioByKey.get(phraseKey) : null;
+        if (resolvedAudioFiles) next.resolvedAudioFiles = resolvedAudioFiles;
+
+        const mediaId = Number(screen?.mediaId);
+        const media = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
+        if (media) {
+          next.resolvedImageUrl = media.url;
+          next.resolvedImageName = media.name;
+        }
+
+        return next;
       }),
     },
   };
@@ -256,7 +283,7 @@ app.get('/api/course/lessons/:id', async (req, res) => {
     });
 
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-    res.json(await hydrateLessonAudio(lesson));
+    res.json(await hydrateLessonContent(lesson));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -328,6 +355,115 @@ app.patch('/api/admin/voices/:id', async (req, res) => {
 
     const voice = await prisma.voiceProfile.update({ where: { id }, data });
     res.json(voice);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/media-library', async (_req, res) => {
+  try {
+    const entries = await prisma.mediaAsset.findMany({
+      orderBy: [{ name: 'asc' }, { id: 'asc' }],
+    });
+    res.json(entries);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/media-library', async (req, res) => {
+  const name = asString(req.body.name).trim();
+  const key = normalizeMediaName(name);
+  const url = asString(req.body.url).trim();
+
+  if (!key) return res.status(400).json({ error: 'Название картинки обязательно' });
+  if (!url) return res.status(400).json({ error: 'Сначала загрузи картинку' });
+
+  try {
+    const existing = await prisma.mediaAsset.findUnique({ where: { key } });
+    if (existing) return res.status(409).json({ error: 'Картинка с таким названием уже есть в медиатеке' });
+
+    const entry = await prisma.mediaAsset.create({
+      data: {
+        name,
+        key,
+        url,
+        mimeType: req.body.mimeType ? asString(req.body.mimeType) : null,
+        originalName: req.body.originalName ? asString(req.body.originalName) : null,
+        size: Number.isFinite(Number(req.body.size)) ? Math.max(0, Math.round(Number(req.body.size))) : null,
+      },
+    });
+    res.status(201).json(entry);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/media-library/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid media asset id' });
+
+  try {
+    const current = await prisma.mediaAsset.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ error: 'Картинка не найдена' });
+
+    const data = {};
+
+    if ('name' in req.body) {
+      const name = asString(req.body.name).trim();
+      const key = normalizeMediaName(name);
+      if (!key) return res.status(400).json({ error: 'Название картинки обязательно' });
+
+      const duplicate = await prisma.mediaAsset.findUnique({ where: { key } });
+      if (duplicate && duplicate.id !== id) {
+        return res.status(409).json({ error: 'Картинка с таким названием уже есть в медиатеке' });
+      }
+
+      data.name = name;
+      data.key = key;
+    }
+
+    if ('url' in req.body) {
+      const url = asString(req.body.url).trim();
+      if (!url) return res.status(400).json({ error: 'URL картинки обязателен' });
+      data.url = url;
+    }
+    if ('mimeType' in req.body) data.mimeType = req.body.mimeType ? asString(req.body.mimeType) : null;
+    if ('originalName' in req.body) data.originalName = req.body.originalName ? asString(req.body.originalName) : null;
+    if ('size' in req.body) data.size = Number.isFinite(Number(req.body.size)) ? Math.max(0, Math.round(Number(req.body.size))) : null;
+
+    const entry = await prisma.mediaAsset.update({ where: { id }, data });
+    res.json(entry);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/media-library/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid media asset id' });
+
+  try {
+    const entry = await prisma.mediaAsset.findUnique({ where: { id } });
+    if (!entry) return res.status(404).json({ error: 'Картинка не найдена' });
+
+    const lessons = await prisma.lesson.findMany({ select: { id: true, content: true } });
+    let usages = 0;
+    for (const lesson of lessons) {
+      const screens = lesson.content && typeof lesson.content === 'object' && Array.isArray(lesson.content.screens)
+        ? lesson.content.screens
+        : [];
+      usages += screens.filter(screen => Number(screen?.mediaId) === id).length;
+    }
+
+    if (usages > 0) {
+      return res.status(409).json({
+        error: `Эта картинка используется в заданиях: ${usages}. Сначала замени её там.`,
+      });
+    }
+
+    await prisma.mediaAsset.delete({ where: { id } });
+    res.json({ ok: true });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
