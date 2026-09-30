@@ -288,22 +288,26 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange,
                   <div className="voice-group-title">{group === 'Женский' ? 'Женские голоса' : 'Мужские голоса'}</div>
                   <div className="voice-grid">
                     {voices.filter(voice => voice.gender === group).map(voice => (
-                      <div className={`voice-card ${voice.id === voicePreset ? 'selected' : ''}`} key={voice.id}>
-                        <button className="voice-select" onClick={() => onVoiceChange(voice.id)}>
+                      <button
+                        className={`voice-card voice-card-button ${voice.id === voicePreset ? 'selected' : ''}`}
+                        key={voice.id}
+                        onClick={() => {
+                          onVoiceChange(voice.id);
+                          if (voice.previewUrl) playLessonAudio(voice.previewUrl);
+                        }}
+                        title={voice.previewUrl ? 'Выбрать и послушать голос' : 'Выбрать голос'}
+                      >
+                        <span className="voice-select">
                           <span className="voice-avatar">{voice.name[0]}</span>
                           <span className="voice-copy"><strong>{voice.name}</strong><small>{voice.note}</small></span>
                           <span className="voice-radio">{voice.id === voicePreset && <Check size={13} />}</span>
-                        </button>
-                        {voice.sampleText && <div className="voice-sample-text">“{voice.sampleText}”</div>}
-                        <button
-                          className="voice-preview"
-                          disabled={!voice.previewUrl}
-                          onClick={() => playLessonAudio(voice.previewUrl)}
-                          title={voice.previewUrl ? voice.sampleText : 'Демо этого голоса пока не загружено'}
-                        >
-                          <Volume2 size={16} /> {voice.previewUrl ? 'Послушать голос' : 'Демо не загружено'}
-                        </button>
-                      </div>
+                        </span>
+                        {voice.sampleText && <span className="voice-sample-text">“{voice.sampleText}”</span>}
+                        <span className="voice-card-audio-state">
+                          <Volume2 size={15} />
+                          {voice.previewUrl ? 'Нажми, чтобы выбрать и услышать' : 'Демо пока не загружено'}
+                        </span>
+                      </button>
                     ))}
                   </div>
                 </div>
@@ -471,7 +475,7 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 let activeLessonAudio = null;
 
 const LESSON_TEST_MODE = import.meta.env.DEV;
-const UI_SOUND_VERSION = '20260930-4';
+const UI_SOUND_VERSION = '20260930-5';
 const UI_SOUNDS = {
   click: { url: `/assets/sounds/mclick.mp3?v=${UI_SOUND_VERSION}`, volume: 0.42 },
   success: { url: `/assets/sounds/success.mp3?v=${UI_SOUND_VERSION}`, volume: 0.72 },
@@ -479,102 +483,60 @@ const UI_SOUNDS = {
   end: { url: END_SOUND_DATA_URL, volume: 0.86 },
 };
 
-let uiAudioContext = null;
-const uiAudioBuffers = new Map();
-const uiAudioLoads = new Map();
+const uiAudioPools = new Map();
 
-function getUiAudioContext() {
-  if (typeof window === 'undefined') return null;
-  if (uiAudioContext?.state === 'closed') {
-    uiAudioContext = null;
-    uiAudioBuffers.clear();
-    uiAudioLoads.clear();
-  }
-
-  if (!uiAudioContext) {
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) return null;
-    uiAudioContext = new AudioContextCtor({ latencyHint: 'interactive' });
-  }
-  return uiAudioContext;
+function createUiAudio(config) {
+  const audio = new Audio();
+  audio.preload = 'auto';
+  audio.src = config.url;
+  audio.volume = config.volume;
+  audio.load();
+  return audio;
 }
 
-async function loadUiSound(name) {
+function getUiSoundPool(name) {
+  if (typeof window === 'undefined') return [];
+  if (uiAudioPools.has(name)) return uiAudioPools.get(name);
+
   const config = UI_SOUNDS[name];
-  const context = getUiAudioContext();
-  if (!config || !context) return null;
-  if (uiAudioBuffers.has(name)) return uiAudioBuffers.get(name);
-  if (uiAudioLoads.has(name)) return uiAudioLoads.get(name);
+  if (!config) return [];
 
-  const loading = (async () => {
-    const response = await fetch(config.url);
-    if (!response.ok) throw new Error(`Could not load ${name} sound`);
-    const data = await response.arrayBuffer();
-    const buffer = await context.decodeAudioData(data.slice(0));
-    uiAudioBuffers.set(name, buffer);
-    return buffer;
-  })().catch(error => {
-    console.warn(`UI sound preload failed: ${name}`, error);
-    return null;
-  }).finally(() => {
-    uiAudioLoads.delete(name);
-  });
-
-  uiAudioLoads.set(name, loading);
-  return loading;
-}
-
-function startUiBuffer(name, buffer) {
-  const config = UI_SOUNDS[name];
-  const context = getUiAudioContext();
-  if (!config || !context || !buffer || context.state !== 'running') return false;
-
-  try {
-    const source = context.createBufferSource();
-    const gain = context.createGain();
-    source.buffer = buffer;
-    gain.gain.value = config.volume;
-    source.connect(gain);
-    gain.connect(context.destination);
-    source.start(0);
-    return true;
-  } catch (error) {
-    console.warn(`UI sound start failed: ${name}`, error);
-    return false;
-  }
+  const size = name === 'click' ? 6 : 3;
+  const pool = Array.from({ length: size }, () => createUiAudio(config));
+  uiAudioPools.set(name, pool);
+  return pool;
 }
 
 function playUiSound(name) {
-  const context = getUiAudioContext();
-  if (!context) return false;
+  const config = UI_SOUNDS[name];
+  if (!config || typeof window === 'undefined') return false;
 
-  const playLoaded = () => {
-    const buffer = uiAudioBuffers.get(name);
-    if (buffer) return startUiBuffer(name, buffer);
+  const pool = getUiSoundPool(name);
+  const audio = pool.find(item => item.paused || item.ended) || pool[0];
+  if (!audio) return false;
 
-    void loadUiSound(name).then(loaded => {
-      if (!loaded) return;
-      if (context.state === 'running') startUiBuffer(name, loaded);
-    });
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = config.volume;
+    const promise = audio.play();
+    if (promise?.catch) promise.catch(error => console.warn(`UI sound ${name} failed:`, error));
+    return true;
+  } catch (error) {
+    console.warn(`UI sound ${name} failed:`, error);
     return false;
-  };
-
-  if (context.state === 'running') return playLoaded();
-
-  void context.resume().then(() => playLoaded()).catch(() => {});
-  return false;
+  }
 }
 
 function preloadUiSounds() {
   if (typeof window === 'undefined') return;
-  getUiAudioContext();
-  Object.keys(UI_SOUNDS).forEach(name => { void loadUiSound(name); });
-}
-
-function unlockUiAudio() {
-  const context = getUiAudioContext();
-  if (!context || context.state === 'running') return;
-  void context.resume().catch(() => {});
+  Object.keys(UI_SOUNDS).forEach(name => {
+    getUiSoundPool(name).forEach(audio => {
+      if (audio.readyState < 3) {
+        try { audio.load(); } catch {}
+      }
+    });
+  });
 }
 
 function installUiAudioLifecycle() {
@@ -582,13 +544,9 @@ function installUiAudioLifecycle() {
   window.__skladnoAudioLifecycleInstalled = true;
 
   const restore = () => {
-    if (document.visibilityState !== 'visible') return;
-    unlockUiAudio();
-    preloadUiSounds();
+    if (document.visibilityState === 'visible') preloadUiSounds();
   };
 
-  document.addEventListener('pointerdown', unlockUiAudio, { capture: true, passive: true });
-  document.addEventListener('keydown', unlockUiAudio, { capture: true });
   document.addEventListener('visibilitychange', restore);
   window.addEventListener('focus', restore);
   window.addEventListener('pageshow', restore);
@@ -598,13 +556,14 @@ function installGlobalClickSound() {
   if (typeof document === 'undefined' || window.__skladnoClickSoundInstalled) return;
   window.__skladnoClickSoundInstalled = true;
 
-  document.addEventListener('click', event => {
+  document.addEventListener('pointerdown', event => {
+    if (event.button !== undefined && event.button !== 0) return;
     const target = event.target instanceof Element ? event.target : null;
     const control = target?.closest('button, a, [role="button"], label.admin-upload-btn');
     if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true') return;
     if (control.dataset.uiClick === 'off' || control.closest('[data-ui-click="off"]')) return;
     playUiSound('click');
-  }, true);
+  }, { capture: true, passive: true });
 }
 
 function getScreenAudio(screen, presetId) {
