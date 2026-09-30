@@ -4190,3 +4190,24 @@ body.lesson-scroll-locked{
   align-items:center;
   gap:5px;
 }
+
+
+.lesson-listening-missing{
+  width:min(520px,100%);
+  min-height:54px;
+  margin:12px 0 16px;
+  padding:12px 14px;
+  border:1px dashed #d6dfdd;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  background:#f8faf9;
+  color:#73878b;
+  font-size:12px;
+  line-height:1.4;
+}
+.lesson-listening-missing svg{
+  flex:0 0 auto;
+  color:#8ba09f;
+}
