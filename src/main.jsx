@@ -293,6 +293,7 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange,
                           <span className="voice-copy"><strong>{voice.name}</strong><small>{voice.note}</small></span>
                           <span className="voice-radio">{voice.id === voicePreset && <Check size={13} />}</span>
                         </button>
+                        {voice.sampleText && <div className="voice-sample-text">“{voice.sampleText}”</div>}
                         <button
                           className="voice-preview"
                           disabled={!voice.previewUrl}
