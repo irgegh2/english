@@ -480,6 +480,7 @@ const UI_SOUNDS = {
 let uiAudioContext = null;
 const uiAudioBuffers = new Map();
 const uiAudioLoads = new Map();
+const htmlUiSounds = new Map();
 
 function getUiAudioContext() {
   if (typeof window === 'undefined') return null;
@@ -1741,7 +1742,11 @@ function App() {
 }
 
 const isAdminRoute = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
-preloadUiSounds();
-installUiAudioLifecycle();
-installGlobalClickSound();
+try {
+  preloadUiSounds();
+  installUiAudioLifecycle();
+  installGlobalClickSound();
+} catch (error) {
+  console.warn('UI audio initialization failed:', error);
+}
 createRoot(document.getElementById('root')).render(isAdminRoute ? <AdminApp /> : <App />);
