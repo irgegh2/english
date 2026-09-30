@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -198,6 +199,30 @@ async function deleteStorageUrl(url) {
   const client = createStorageClient(settings);
   await client.send(new DeleteObjectCommand({ Bucket: settings.bucket, Key: key }));
   return true;
+}
+
+async function cleanupMediaUrl(url) {
+  if (!url) return false;
+
+  const absolute = localUploadAbsolutePath(url);
+  if (absolute) {
+    try {
+      await fs.promises.unlink(absolute);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    return true;
+  }
+
+  return deleteStorageUrl(url);
+}
+
+async function cleanupMediaUrlQuietly(url) {
+  try {
+    await cleanupMediaUrl(url);
+  } catch (error) {
+    console.warn('Failed to remove old media object:', error.message);
+  }
 }
 
 const clampProgress = value => Math.max(0, Math.min(100, Number(value ?? 0)));
@@ -637,6 +662,7 @@ app.patch('/api/admin/voices/:id', async (req, res) => {
   if (!VOICE_IDS.has(id)) return res.status(400).json({ error: 'Invalid voice id' });
 
   try {
+    const current = await prisma.voiceProfile.findUnique({ where: { id } });
     const data = {};
     if ('name' in req.body) data.name = asString(req.body.name);
     if ('gender' in req.body) data.gender = asString(req.body.gender);
@@ -645,6 +671,9 @@ app.patch('/api/admin/voices/:id', async (req, res) => {
     if ('previewUrl' in req.body) data.previewUrl = req.body.previewUrl ? asString(req.body.previewUrl) : null;
 
     const voice = await prisma.voiceProfile.update({ where: { id }, data });
+    if ('previewUrl' in data && current?.previewUrl && current.previewUrl !== data.previewUrl) {
+      void cleanupMediaUrlQuietly(current.previewUrl);
+    }
     res.json(voice);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -724,6 +753,9 @@ app.patch('/api/admin/media-library/:id', async (req, res) => {
     if ('size' in req.body) data.size = Number.isFinite(Number(req.body.size)) ? Math.max(0, Math.round(Number(req.body.size))) : null;
 
     const entry = await prisma.mediaAsset.update({ where: { id }, data });
+    if ('url' in data && current.url && current.url !== data.url) {
+      void cleanupMediaUrlQuietly(current.url);
+    }
     res.json(entry);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -754,6 +786,7 @@ app.delete('/api/admin/media-library/:id', async (req, res) => {
     }
 
     await prisma.mediaAsset.delete({ where: { id } });
+    void cleanupMediaUrlQuietly(entry.url);
     res.json({ ok: true });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -819,8 +852,13 @@ app.patch('/api/admin/audio-dictionary/:id', async (req, res) => {
       if (key !== current.key) renamedPhrase = { text, oldKey: current.key };
     }
 
+    let replacedAudioUrls = [];
     if ('audioFiles' in req.body) {
       data.audioFiles = sanitizeAudioFiles(req.body.audioFiles);
+      const currentAudioFiles = sanitizeAudioFiles(current.audioFiles);
+      replacedAudioUrls = Object.entries(currentAudioFiles)
+        .filter(([voiceId, oldUrl]) => oldUrl && oldUrl !== data.audioFiles[voiceId])
+        .map(([, oldUrl]) => oldUrl);
     }
 
     const lessonUpdates = [];
@@ -852,6 +890,7 @@ app.patch('/api/admin/audio-dictionary/:id', async (req, res) => {
       return updated;
     });
 
+    replacedAudioUrls.forEach(url => { void cleanupMediaUrlQuietly(url); });
     res.json(entry);
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -863,7 +902,9 @@ app.delete('/api/admin/audio-dictionary/:id', async (req, res) => {
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid audio phrase id' });
 
   try {
+    const current = await prisma.audioPhrase.findUnique({ where: { id } });
     await prisma.audioPhrase.delete({ where: { id } });
+    Object.values(sanitizeAudioFiles(current?.audioFiles)).forEach(url => { void cleanupMediaUrlQuietly(url); });
     res.json({ ok: true });
   } catch (error) {
     res.status(400).json({ error: error.message });
@@ -1065,18 +1106,9 @@ app.delete('/api/admin/media', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'Media URL is required' });
 
   try {
-    const absolute = localUploadAbsolutePath(url);
-    if (absolute) {
-      try {
-        await fs.promises.unlink(absolute);
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-      return res.json({ ok: true, storage: 'local' });
-    }
-
-    const deletedFromS3 = await deleteStorageUrl(url);
-    res.json({ ok: true, storage: deletedFromS3 ? 's3' : 'external' });
+    const local = Boolean(localUploadAbsolutePath(url));
+    const deleted = await cleanupMediaUrl(url);
+    res.json({ ok: true, storage: local ? 'local' : deleted ? 's3' : 'external' });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
