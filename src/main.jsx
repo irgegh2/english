@@ -76,8 +76,8 @@ const VOICE_PRESETS = [
   { id: 'theo', name: 'Theo', gender: 'Мужской', note: 'быстрый · разговорный' },
 ];
 
-function getVoicePreset(id) {
-  return VOICE_PRESETS.find(voice => voice.id === id) || VOICE_PRESETS[0];
+function getVoicePreset(id, options = VOICE_PRESETS) {
+  return options.find(voice => voice.id === id) || options[0] || VOICE_PRESETS[0];
 }
 
 function Logo() {
@@ -215,10 +215,11 @@ function Sidebar({ section, activeItem, setActiveItem, switching, onItemSelect, 
   );
 }
 
-function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange }) {
+function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange, voiceOptions = VOICE_PRESETS }) {
   const [langOpen, setLangOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const selectedVoice = getVoicePreset(voicePreset);
+  const voices = voiceOptions.length ? voiceOptions : VOICE_PRESETS;
+  const selectedVoice = getVoicePreset(voicePreset, voices);
 
   return (
     <>
@@ -285,16 +286,21 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange 
                 <div className="voice-group" key={group}>
                   <div className="voice-group-title">{group === 'Женский' ? 'Женские голоса' : 'Мужские голоса'}</div>
                   <div className="voice-grid">
-                    {VOICE_PRESETS.filter(voice => voice.gender === group).map(voice => (
+                    {voices.filter(voice => voice.gender === group).map(voice => (
                       <div className={`voice-card ${voice.id === voicePreset ? 'selected' : ''}`} key={voice.id}>
                         <button className="voice-select" onClick={() => onVoiceChange(voice.id)}>
                           <span className="voice-avatar">{voice.name[0]}</span>
                           <span className="voice-copy"><strong>{voice.name}</strong><small>{voice.note}</small></span>
                           <span className="voice-radio">{voice.id === voicePreset && <Check size={13} />}</span>
                         </button>
-                        <div className="voice-preview voice-preview-static">
-                          <Volume2 size={16} /> Аудио задаётся в уроках
-                        </div>
+                        <button
+                          className="voice-preview"
+                          disabled={!voice.previewUrl}
+                          onClick={() => playLessonAudio(voice.previewUrl)}
+                          title={voice.previewUrl ? voice.sampleText : 'Демо этого голоса пока не загружено'}
+                        >
+                          <Volume2 size={16} /> {voice.previewUrl ? 'Послушать голос' : 'Демо не загружено'}
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1071,6 +1077,7 @@ function App() {
   const [profile, setProfile] = useState({ name: 'Анна', streak: 12, overallProgress: 62 });
   const [dashboard, setDashboard] = useState(null);
   const [modules, setModules] = useState([]);
+  const [voiceOptions, setVoiceOptions] = useState(VOICE_PRESETS);
   const [blocks, setBlocks] = useState([]);
   const [selectedModule, setSelectedModule] = useState(null);
   const [selectedBlock, setSelectedBlock] = useState(null);
@@ -1094,12 +1101,14 @@ function App() {
     Promise.all([
       fetch('/api/dashboard').then(r => r.ok ? r.json() : Promise.reject()),
       fetch('/api/course/modules').then(r => r.ok ? r.json() : Promise.reject()),
+      fetch('/api/voices').then(r => r.ok ? r.json() : VOICE_PRESETS).catch(() => VOICE_PRESETS),
     ])
-      .then(([dashboardData, modulesData]) => {
+      .then(([dashboardData, modulesData, voicesData]) => {
         setDashboard(dashboardData);
         setProfile(dashboardData.profile);
         setVoicePreset(dashboardData.profile.voicePreset || 'ella');
         setModules(modulesData);
+        if (Array.isArray(voicesData) && voicesData.length) setVoiceOptions(voicesData);
       })
       .catch(() => {})
       .finally(() => setCourseLoading(false));
@@ -1334,7 +1343,7 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Topbar profile={profile} section={section} onSectionChange={navigateSection} voicePreset={voicePreset} onVoiceChange={changeVoicePreset} />
+      <Topbar profile={profile} section={section} onSectionChange={navigateSection} voicePreset={voicePreset} onVoiceChange={changeVoicePreset} voiceOptions={voiceOptions} />
       <div className="layout">
         <Sidebar
           section={renderedSection}
