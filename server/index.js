@@ -242,9 +242,12 @@ async function hydrateLessonContent(lesson) {
     : [];
 
   const phraseKeys = [...new Set(
-    screens
-      .map(screen => normalizeAudioPhrase(screen?.audioPhrase))
-      .filter(Boolean)
+    screens.flatMap(screen => [
+      normalizeAudioPhrase(screen?.audioPhrase),
+      ...(Array.isArray(screen?.audioPhrases)
+        ? screen.audioPhrases.map(phrase => normalizeAudioPhrase(phrase))
+        : []),
+    ]).filter(Boolean)
   )];
 
   const mediaIds = [...new Set(
@@ -277,6 +280,16 @@ async function hydrateLessonContent(lesson) {
         const phraseKey = normalizeAudioPhrase(screen?.audioPhrase);
         const resolvedAudioFiles = phraseKey ? audioByKey.get(phraseKey) : null;
         if (resolvedAudioFiles) next.resolvedAudioFiles = resolvedAudioFiles;
+
+        if (Array.isArray(screen?.audioPhrases) && screen.audioPhrases.length) {
+          next.resolvedAudioSequence = screen.audioPhrases.map(phrase => {
+            const key = normalizeAudioPhrase(phrase);
+            return {
+              phrase,
+              audioFiles: key ? (audioByKey.get(key) || {}) : {},
+            };
+          });
+        }
 
         const mediaId = Number(screen?.mediaId);
         const media = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
