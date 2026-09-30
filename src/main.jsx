@@ -976,17 +976,27 @@ function inferSpecQuestions(screen) {
 }
 
 function inferSpecPairs(screen) {
-  if (Array.isArray(screen?.pairs) && screen.pairs.length) return screen.pairs;
-
+  const pairs = Array.isArray(screen?.pairs)
+    ? screen.pairs.map(pair => [...pair])
+    : [];
   const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
-  const pairs = [];
 
   for (let index = 1; index < lines.length; index += 1) {
     if (!lines[index].startsWith('→')) continue;
     const left = lines[index - 1].trim();
     const right = lines[index].replace(/^→\s*/, '').trim();
     if (!left || !right || /^(ситуация|следующее|цель|что |важно)/i.test(left)) continue;
-    pairs.push([left, right]);
+    if (!pairs.some(pair => pair[0] === left && pair.slice(1).join(' → ') === right)) pairs.push([left, right]);
+  }
+
+  if (screen?.mode === 'classify') {
+    for (const question of inferSpecQuestions(screen)) {
+      if (!question.answer || !question.prompt) continue;
+      const left = question.prompt.replace(/:$/, '').trim();
+      const right = question.answer.trim();
+      if (!left || !right || /^вопрос\s*\d*$/i.test(left)) continue;
+      if (!pairs.some(pair => pair[0] === left && pair.slice(1).join(' → ') === right)) pairs.push([left, right]);
+    }
   }
 
   return pairs;
