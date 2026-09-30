@@ -21,23 +21,37 @@ if (!repairMode) {
   await prisma.courseModule.deleteMany();
 }
 
-await prisma.profile.upsert({
-  where: { id: 1 },
-  update: { completedModules: 6, totalModules: 35, currentModulePosition: 7, currentBlockPosition: 1 },
-  create: { id: 1, completedModules: 6, totalModules: 35, currentModulePosition: 7, currentBlockPosition: 1 },
-});
+if (repairMode) {
+  const existingProfile = await prisma.profile.findUnique({ where: { id: 1 } });
+  if (!existingProfile) {
+    await prisma.profile.create({
+      data: { id: 1, completedModules: 6, totalModules: 35, currentModulePosition: 7, currentBlockPosition: 1 },
+    });
+  }
+} else {
+  await prisma.profile.upsert({
+    where: { id: 1 },
+    update: { completedModules: 6, totalModules: 35, currentModulePosition: 7, currentBlockPosition: 1 },
+    create: { id: 1, completedModules: 6, totalModules: 35, currentModulePosition: 7, currentBlockPosition: 1 },
+  });
+}
 
 for (const voice of voiceProfiles) {
-  await prisma.voiceProfile.upsert({
-    where: { id: voice.id },
-    update: {
-      position: voice.position,
-      name: voice.name,
-      gender: voice.gender,
-      note: voice.note,
-    },
-    create: voice,
-  });
+  if (repairMode) {
+    const existingVoice = await prisma.voiceProfile.findUnique({ where: { id: voice.id } });
+    if (!existingVoice) await prisma.voiceProfile.create({ data: voice });
+  } else {
+    await prisma.voiceProfile.upsert({
+      where: { id: voice.id },
+      update: {
+        position: voice.position,
+        name: voice.name,
+        gender: voice.gender,
+        note: voice.note,
+      },
+      create: voice,
+    });
+  }
 }
 
 for (const m of course) {
