@@ -71,3 +71,16 @@ model Lesson {
   updatedAt    DateTime     @updatedAt
 
 }
+
+
+model VoiceProfile {
+  id          String   @id
+  position    Int      @unique
+  name        String
+  gender      String
+  note        String
+  sampleText  String
+  previewUrl  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
