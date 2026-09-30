@@ -503,3 +503,131 @@ body{margin:0}
   .admin-field.wide,.admin-media-section,.admin-repeat-editor{grid-column:1}
   .admin-audio-grid{grid-template-columns:1fr}
 }
+
+
+/* ===== Voice preview library ===== */
+.admin-voices-page{
+  max-width:1180px;
+  margin:0 auto;
+}
+.admin-voice-help{
+  margin:0 0 18px;
+  border:1px solid #cfe6df;
+  border-radius:15px;
+  background:#f0faf7;
+  padding:14px 16px;
+  display:flex;
+  align-items:flex-start;
+  gap:11px;
+  color:#0b867a;
+}
+.admin-voice-help>div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.admin-voice-help strong{
+  color:#284e57;
+  font-size:11px;
+}
+.admin-voice-help span{
+  color:#6f8389;
+  font-size:9.5px;
+  line-height:1.45;
+}
+.admin-voice-help code{
+  padding:2px 5px;
+  border-radius:6px;
+  background:#fff;
+  color:#0a746b;
+  font-size:9px;
+}
+.admin-voice-cards{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:14px;
+}
+.admin-voice-card{
+  border:1px solid #dce6e3;
+  border-radius:17px;
+  background:#fff;
+  padding:16px;
+  box-shadow:0 5px 16px rgba(29,67,69,.025);
+}
+.admin-voice-card-head{
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr) auto;
+  gap:10px;
+  align-items:center;
+  margin-bottom:14px;
+}
+.admin-voice-avatar{
+  width:44px;
+  height:44px;
+  border-radius:14px;
+  background:linear-gradient(145deg,#dcf6ef,#edf6da);
+  color:#0a7d72;
+  display:grid;
+  place-items:center;
+  font-size:16px;
+  font-weight:800;
+}
+.admin-voice-card-head>div{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+.admin-voice-card-head strong{
+  color:#244a54;
+  font-size:13px;
+}
+.admin-voice-card-head span{
+  color:#869498;
+  font-size:8.5px;
+}
+.admin-voice-file-state{
+  min-height:28px;
+  padding:0 9px;
+  border-radius:999px;
+  background:#f4f6f5;
+  color:#8a9799!important;
+  display:flex;
+  align-items:center;
+  font-size:8px!important;
+  font-weight:800;
+}
+.admin-voice-file-state.ready{
+  background:#e9f7f3;
+  color:#0b8277!important;
+}
+.admin-voice-card .admin-field{
+  margin-bottom:11px;
+}
+.admin-voice-card .admin-media-slot{
+  background:#f8faf9;
+}
+.admin-voice-preview-btn{
+  margin-top:9px;
+  min-height:37px;
+  width:100%;
+  border:1px solid #cde3dd;
+  border-radius:10px;
+  background:#eef8f5;
+  color:#0b8378;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  font-size:9px;
+  font-weight:800;
+  cursor:pointer;
+}
+.admin-voice-preview-btn:hover{
+  background:#e1f4ef;
+  border-color:#b9dcd3;
+}
+
+@media(max-width:1050px){
+  .admin-voice-cards{grid-template-columns:1fr}
+}
