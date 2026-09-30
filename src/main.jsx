@@ -477,82 +477,47 @@ const UI_SOUNDS = {
   end: { url: `/assets/sounds/end.mp3?v=${UI_SOUND_VERSION}`, volume: 0.86 },
 };
 
-let uiAudioContext = null;
-const uiAudioBuffers = new Map();
-const uiAudioLoads = new Map();
-const htmlUiSounds = new Map();
+const uiAudioPools = new Map();
 
-function getUiAudioContext() {
-  if (typeof window === 'undefined') return null;
+function getUiSoundPool(name) {
+  if (typeof window === 'undefined') return [];
+  if (uiAudioPools.has(name)) return uiAudioPools.get(name);
 
-  if (uiAudioContext?.state === 'closed') {
-    uiAudioContext = null;
-    uiAudioBuffers.clear();
-    uiAudioLoads.clear();
-  }
-
-  if (!uiAudioContext) {
-    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextCtor) return null;
-    uiAudioContext = new AudioContextCtor({ latencyHint: 'interactive' });
-  }
-
-  return uiAudioContext;
-}
-
-async function resumeUiAudio() {
-  const context = getUiAudioContext();
-  if (!context) return null;
-
-  if (context.state !== 'running') {
-    try { await context.resume(); } catch {}
-  }
-
-  return context;
-}
-
-async function loadUiSound(name) {
   const config = UI_SOUNDS[name];
-  if (!config) return null;
-  if (uiAudioBuffers.has(name)) return uiAudioBuffers.get(name);
-  if (uiAudioLoads.has(name)) return uiAudioLoads.get(name);
+  if (!config) return [];
 
-  const promise = (async () => {
-    const context = getUiAudioContext();
-    if (!context) return null;
+  const size = name === 'click' ? 5 : 2;
+  const pool = Array.from({ length: size }, () => {
+    const audio = new Audio(config.url);
+    audio.preload = 'auto';
+    audio.volume = config.volume;
+    audio.load();
+    return audio;
+  });
 
-    const response = await fetch(config.url, { cache: 'force-cache' });
-    if (!response.ok) throw new Error(`Failed to load UI sound: ${name}`);
-    const data = await response.arrayBuffer();
-    const buffer = await context.decodeAudioData(data.slice(0));
-    uiAudioBuffers.set(name, buffer);
-    return buffer;
-  })().catch(() => null).finally(() => uiAudioLoads.delete(name));
-
-  uiAudioLoads.set(name, promise);
-  return promise;
+  uiAudioPools.set(name, pool);
+  return pool;
 }
 
-async function playUiSound(name) {
+function playUiSound(name) {
   const config = UI_SOUNDS[name];
-  if (!config) return false;
+  if (!config || typeof window === 'undefined') return false;
 
-  const context = await resumeUiAudio();
-  if (!context || context.state !== 'running') return false;
-
-  const buffer = uiAudioBuffers.get(name) || await loadUiSound(name);
-  if (!buffer) return false;
+  const pool = getUiSoundPool(name);
+  const audio = pool.find(item => item.paused || item.ended) || pool[0];
+  if (!audio) return false;
 
   try {
-    const source = context.createBufferSource();
-    const gain = context.createGain();
-    source.buffer = buffer;
-    gain.gain.value = config.volume;
-    source.connect(gain);
-    gain.connect(context.destination);
-    source.start(0);
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = config.volume;
+    const promise = audio.play();
+    if (promise?.catch) {
+      promise.catch(error => console.warn(`UI sound ${name} failed:`, error));
+    }
     return true;
-  } catch {
+  } catch (error) {
+    console.warn(`UI sound ${name} failed:`, error);
     return false;
   }
 }
@@ -565,56 +530,21 @@ function playUiSoundFallback(name) {
     const audio = new Audio(config.url);
     audio.preload = 'auto';
     audio.volume = config.volume;
-    void audio.play();
+    void audio.play().catch(() => {});
   } catch {}
 }
 
-function getHtmlUiSound(name) {
-  if (typeof window === 'undefined') return null;
-  if (htmlUiSounds.has(name)) return htmlUiSounds.get(name);
-
-  const config = UI_SOUNDS[name];
-  if (!config) return null;
-
-  const audio = new Audio(config.url);
-  audio.preload = 'auto';
-  audio.volume = config.volume;
-  audio.load();
-  htmlUiSounds.set(name, audio);
-  return audio;
-}
-
 function playUiSoundImmediate(name) {
-  const audio = getHtmlUiSound(name);
-  const config = UI_SOUNDS[name];
-  if (!audio || !config) return false;
-
-  try {
-    audio.pause();
-    audio.currentTime = 0;
-    audio.volume = config.volume;
-    const promise = audio.play();
-    if (promise?.catch) {
-      promise.catch(() => { void playUiSound(name); });
-    }
-    return true;
-  } catch {
-    void playUiSound(name);
-    return false;
-  }
+  return playUiSound(name);
 }
 
 function preloadUiSounds() {
   if (typeof window === 'undefined') return;
-  getUiAudioContext();
   Object.keys(UI_SOUNDS).forEach(name => {
-    void loadUiSound(name);
-    getHtmlUiSound(name);
+    getUiSoundPool(name).forEach(audio => {
+      try { audio.load(); } catch {}
+    });
   });
-}
-
-function unlockUiAudio() {
-  void resumeUiAudio();
 }
 
 function installUiAudioLifecycle() {
@@ -622,27 +552,17 @@ function installUiAudioLifecycle() {
   window.__skladnoAudioLifecycleInstalled = true;
 
   const restore = () => {
-    if (document.visibilityState === 'visible') {
-      void resumeUiAudio().then(context => {
-        if (context?.state === 'running') {
-          Object.keys(UI_SOUNDS).forEach(name => { void loadUiSound(name); });
-        }
-      });
-    }
+    if (document.visibilityState === 'visible') preloadUiSounds();
   };
 
   document.addEventListener('visibilitychange', restore);
   window.addEventListener('focus', restore);
   window.addEventListener('pageshow', restore);
-  document.addEventListener('pointerdown', restore, { capture: true, passive: true });
-  document.addEventListener('keydown', restore, { capture: true });
 }
 
 function installGlobalClickSound() {
   if (typeof document === 'undefined' || window.__skladnoClickSoundInstalled) return;
   window.__skladnoClickSoundInstalled = true;
-
-  document.addEventListener('pointerdown', unlockUiAudio, { capture: true, passive: true });
 
   document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
