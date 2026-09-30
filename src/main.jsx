@@ -381,7 +381,76 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
   );
 }
 
-function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule }) {
+
+function speakEnglish(text) {
+  if (typeof window === 'undefined' || !window.speechSynthesis || !text) return;
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'en-GB';
+  utterance.rate = 0.88;
+  utterance.pitch = 1;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
+}
+
+function SceneArt({ type = 'meeting', compact = false }) {
+  const labels = {
+    meeting: 'Hi!',
+    casual: 'Hey!',
+    goodbye: 'Bye',
+    bye: 'Bye!',
+    meet: 'Nice!',
+    ask: 'How?',
+  };
+
+  return (
+    <div className={`lesson-scene scene-${type} ${compact ? 'compact' : ''}`} aria-hidden="true">
+      <div className="scene-person scene-person-a"><span /></div>
+      <div className="scene-person scene-person-b"><span /></div>
+      <div className="scene-ground" />
+      <div className="scene-bubble">{labels[type] || 'Hi!'}</div>
+    </div>
+  );
+}
+
+function CourseLessonCard({ lesson, onOpen }) {
+  const ready = lesson.status === 'ready' && lesson.content;
+  const done = lesson.progress === 100;
+
+  return (
+    <article className={`lesson-card course-lesson-card ${ready ? 'lesson-ready' : 'lesson-outline'}`}>
+      <button className="lesson-card-hit" onClick={() => onOpen(lesson)} aria-label={`Открыть урок: ${lesson.title}`} />
+      <div className="lesson-image-wrap">
+        <img src={ASSETS[lesson.imageKey] || `/assets/${lesson.imageKey}`} className="lesson-image" alt="" />
+        <span className="lesson-no">{lesson.position}</span>
+        <span className={`lesson-status ${done ? 'status-done' : ready ? 'status-ready' : ''}`}>
+          {done ? <Check size={18} /> : ready ? <Play size={14} fill="currentColor" /> : <BookOpen size={15} />}
+        </span>
+      </div>
+      <div className="lesson-body">
+        <div className="lesson-card-kicker">{ready ? 'интерактивный урок' : 'план урока'}</div>
+        <h3>{lesson.title}</h3>
+        <div className="tags">
+          <Tag tone="blue">{lesson.tagPrimary}</Tag>
+          <Tag tone={lesson.tagSecondary === 'говорение' ? 'peach' : 'green'}>{lesson.tagSecondary}</Tag>
+        </div>
+        <p>{lesson.description}</p>
+        <div className="progress-line">
+          <div className="progress-bg"><span className="progress-fill" style={{ width: `${lesson.progress}%` }} /></div>
+          <strong>{lesson.progress}%</strong>
+        </div>
+        <button className={`lesson-btn ${ready ? 'primary' : ''}`} onClick={() => onOpen(lesson)}>
+          {ready ? <Play size={14} fill="currentColor" /> : <BookOpen size={15} />}
+          {ready ? (lesson.progress > 0 ? 'Продолжить' : 'Начать урок') : 'Открыть план'}
+          <ArrowRight size={17} />
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule, onOpenLesson }) {
+  const lessons = block?.lessons || [];
+
   return (
     <main className="main-content learning-page block-page">
       <LearningBreadcrumbs moduleData={moduleData} block={block} onModules={onBackToModules} onModule={onBackToModule} />
@@ -394,7 +463,11 @@ function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule
             <div className="block-detail-copy">
               <span className="learning-kicker">{moduleData.level} · Модуль {moduleData.position} · Блок {block.position}</span>
               <h1>{block.title}</h1>
-              <p>Блок создан и связан с модулем в базе данных. Содержание уроков добавим отдельно.</p>
+              <p>
+                {lessons.length
+                  ? `${lessons.length} уроков. Первый урок уже собран как интерактивный сценарий; остальные пока сохранены как структура.`
+                  : 'Уроки и материалы этого блока пока не добавлены.'}
+              </p>
               <button onClick={onBackToModule}><ChevronLeft size={16} /> Ко всем блокам модуля</button>
             </div>
             <div className="block-detail-image">
@@ -402,16 +475,341 @@ function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule
             </div>
           </section>
 
-          <section className="empty-block-content">
-            <div className="empty-block-icon"><BookOpen size={24} /></div>
-            <div>
-              <span>Содержание блока</span>
-              <h2>Уроки пока не добавлены</h2>
-              <p>Здесь появятся уроки, когда мы отдельно спроектируем содержание этого блока.</p>
-            </div>
-          </section>
+          {lessons.length ? (
+            <section className="lessons-grid block-lessons-grid">
+              {lessons.map(lesson => (
+                <CourseLessonCard key={lesson.id} lesson={lesson} onOpen={onOpenLesson} />
+              ))}
+            </section>
+          ) : (
+            <section className="empty-block-content">
+              <div className="empty-block-icon"><BookOpen size={24} /></div>
+              <div>
+                <span>Содержание блока</span>
+                <h2>Уроки пока не добавлены</h2>
+                <p>Здесь появятся уроки, когда мы отдельно спроектируем содержание этого блока.</p>
+              </div>
+            </section>
+          )}
         </>
       )}
+    </main>
+  );
+}
+
+function ChoiceOptions({ options, answer, selected, onSelect }) {
+  return (
+    <div className="lesson-options">
+      {options.map(option => {
+        const isSelected = selected === option;
+        const isCorrect = isSelected && option === answer;
+        const isWrong = isSelected && option !== answer;
+        return (
+          <button
+            key={option}
+            className={`${isCorrect ? 'correct' : ''} ${isWrong ? 'wrong' : ''}`.trim()}
+            onClick={() => onSelect(option)}
+          >
+            <span>{option}</span>
+            {isCorrect && <Check size={18} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function LessonRunner({ lesson, onProgress, onExit }) {
+  const screens = lesson.content?.screens || [];
+  const [step, setStep] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [ordered, setOrdered] = useState([]);
+  const [repeated, setRepeated] = useState({});
+  const [spoken, setSpoken] = useState({});
+  const [finished, setFinished] = useState(false);
+
+  const screen = screens[step];
+
+  useEffect(() => {
+    setAnswers({});
+    setOrdered([]);
+    setRepeated({});
+    setSpoken({});
+  }, [step]);
+
+  if (!screen) return null;
+
+  const setAnswer = (key, value) => setAnswers(prev => ({ ...prev, [key]: value }));
+
+  const allMultiCorrect = items => items.every((item, index) => answers[index] === item.answer);
+  const complete = (() => {
+    if (['intro', 'flashcard'].includes(screen.type)) return true;
+    if (screen.type === 'choice' || screen.type === 'listeningChoice') return answers.single === screen.answer;
+    if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') return allMultiCorrect(screen.items || []);
+    if (screen.type === 'classify') return (screen.items || []).every((item, index) => answers[index] === item.answer);
+    if (screen.type === 'order') return ordered.join(' ') === (screen.answer || []).join(' ');
+    if (screen.type === 'pronunciation') return (screen.phrases || []).every((_, index) => repeated[index]);
+    if (screen.type === 'speakingFinal') return (screen.items || []).every((_, index) => spoken[index]);
+    return true;
+  })();
+
+  const next = () => {
+    const progress = Math.round(((step + 1) / screens.length) * 100);
+    onProgress(progress);
+    if (step >= screens.length - 1) {
+      setFinished(true);
+      return;
+    }
+    setStep(current => current + 1);
+  };
+
+  const previous = () => {
+    if (step > 0) setStep(current => current - 1);
+  };
+
+  if (finished) {
+    return (
+      <section className="lesson-runner lesson-finished">
+        <div className="lesson-finish-icon"><Check size={34} /></div>
+        <span className="lesson-eyebrow">Урок завершён</span>
+        <h1>Hello! — готово</h1>
+        <p>{screen.finishText || 'Ты прошёл первый интерактивный урок.'}</p>
+        <div className="lesson-outcomes">
+          {(lesson.content?.outcomes || []).slice(0, 5).map(item => <div key={item}><Check size={15} />{item}</div>)}
+        </div>
+        <button className="lesson-primary-action" onClick={onExit}>Вернуться к урокам <ArrowRight size={17} /></button>
+      </section>
+    );
+  }
+
+  const renderScreen = () => {
+    if (screen.type === 'intro') {
+      return (
+        <div className="lesson-intro-layout">
+          <div>
+            <span className="lesson-eyebrow">{screen.eyebrow}</span>
+            <h1>{screen.title}</h1>
+            <p>{screen.body}</p>
+            <div className="lesson-chip-row">{screen.chips?.map(chip => <span key={chip}>{chip}</span>)}</div>
+          </div>
+          <SceneArt type="meeting" />
+        </div>
+      );
+    }
+
+    if (screen.type === 'flashcard') {
+      return (
+        <div className="lesson-flash-layout">
+          <SceneArt type={screen.scene} />
+          <div className="lesson-flash-copy">
+            <span className="lesson-eyebrow">{screen.eyebrow}</span>
+            <h1>{screen.phrase}</h1>
+            <p className="lesson-translation">{screen.translation}</p>
+            <button className="lesson-audio-btn" onClick={() => speakEnglish(screen.audio || screen.phrase)}>
+              <Volume2 size={20} /> Послушать
+            </button>
+            <div className="lesson-context-note">{screen.sceneText}</div>
+            {screen.reply && (
+              <div className="lesson-reply">
+                <span>Мини-ответ</span>
+                <strong>{screen.reply}</strong>
+                <small>{screen.replyTranslation}</small>
+              </div>
+            )}
+            {screen.note && <p className="lesson-method-note">{screen.note}</p>}
+          </div>
+        </div>
+      );
+    }
+
+    if (screen.type === 'choice' || screen.type === 'listeningChoice') {
+      return (
+        <div className="lesson-task">
+          <span className="lesson-eyebrow">{screen.eyebrow}</span>
+          <h1>{screen.title}</h1>
+          {screen.type === 'listeningChoice' ? (
+            <button className="lesson-listen-big" onClick={() => speakEnglish(screen.audio)}>
+              <Volume2 size={28} /><span>Воспроизвести</span>
+            </button>
+          ) : (
+            <div className="lesson-question-word">{screen.prompt}</div>
+          )}
+          <ChoiceOptions options={screen.options} answer={screen.answer} selected={answers.single} onSelect={value => setAnswer('single', value)} />
+          {answers.single && <p className={answers.single === screen.answer ? 'lesson-feedback success' : 'lesson-feedback error'}>{answers.single === screen.answer ? 'Верно.' : 'Попробуй ещё раз.'}</p>}
+          {screen.hint && <div className="lesson-hint">{screen.hint}</div>}
+        </div>
+      );
+    }
+
+    if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') {
+      return (
+        <div className="lesson-task">
+          <span className="lesson-eyebrow">{screen.eyebrow}</span>
+          <h1>{screen.title}</h1>
+          {screen.type === 'listeningDialog' && (
+            <button className="lesson-listen-big" onClick={() => speakEnglish((screen.audioLines || []).join(' ... '))}>
+              <Volume2 size={28} /><span>Послушать диалог</span>
+            </button>
+          )}
+          <div className="lesson-multi-stack">
+            {(screen.items || []).map((item, index) => (
+              <div className="lesson-multi-item" key={index}>
+                {item.scene && <SceneArt type={item.scene} compact />}
+                <strong>{item.prompt}</strong>
+                <ChoiceOptions options={item.options} answer={item.answer} selected={answers[index]} onSelect={value => setAnswer(index, value)} />
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (screen.type === 'classify') {
+      return (
+        <div className="lesson-task">
+          <span className="lesson-eyebrow">{screen.eyebrow}</span>
+          <h1>{screen.title}</h1>
+          <div className="classify-list">
+            {screen.items.map((item, index) => (
+              <div className="classify-row" key={item.text}>
+                <strong>{item.text}</strong>
+                <div>
+                  {screen.categories.map(category => (
+                    <button
+                      key={category}
+                      className={answers[index] === category ? (category === item.answer ? 'correct' : 'wrong') : ''}
+                      onClick={() => setAnswer(index, category)}
+                    >
+                      {category === 'Greeting' ? 'Приветствие' : 'Прощание'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (screen.type === 'order') {
+      const remaining = screen.tokens.filter((token, index) => {
+        const selectedCount = ordered.filter(x => x === token).length;
+        const before = screen.tokens.slice(0, index + 1).filter(x => x === token).length;
+        return selectedCount < before;
+      });
+
+      return (
+        <div className="lesson-task">
+          <span className="lesson-eyebrow">{screen.eyebrow}</span>
+          <h1>{screen.title}</h1>
+          <div className="sentence-builder">
+            <div className="sentence-built">
+              {ordered.length ? ordered.map((token, index) => <button key={`${token}-${index}`} onClick={() => setOrdered(current => current.filter((_, i) => i !== index))}>{token}</button>) : <span>Нажимай на слова по порядку</span>}
+            </div>
+            <div className="sentence-tokens">
+              {remaining.map((token, index) => <button key={`${token}-${index}`} onClick={() => setOrdered(current => [...current, token])}>{token}</button>)}
+            </div>
+          </div>
+          {ordered.length > 0 && <p className={complete ? 'lesson-feedback success' : 'lesson-feedback neutral'}>{complete ? 'Фраза собрана правильно.' : 'Продолжай собирать фразу.'}</p>}
+        </div>
+      );
+    }
+
+    if (screen.type === 'pronunciation') {
+      return (
+        <div className="lesson-task">
+          <span className="lesson-eyebrow">{screen.eyebrow}</span>
+          <h1>{screen.title}</h1>
+          <p className="lesson-task-lead">{screen.note}</p>
+          <div className="pronunciation-list">
+            {screen.phrases.map((phrase, index) => (
+              <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
+                <strong>{phrase}</strong>
+                <button onClick={() => speakEnglish(phrase)}><Volume2 size={18} /> Слушать</button>
+                <button onClick={() => setRepeated(prev => ({ ...prev, [index]: true }))}><Mic2 size={18} /> Повторил{repeated[index] && <Check size={15} />}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (screen.type === 'speakingFinal') {
+      return (
+        <div className="lesson-task">
+          <span className="lesson-eyebrow">{screen.eyebrow}</span>
+          <h1>{screen.title}</h1>
+          <p className="lesson-task-lead">Сначала произнеси реплику сам. После этого отметь выполнение и сравни с вариантом.</p>
+          <div className="speaking-final-list">
+            {screen.items.map((item, index) => (
+              <div className={`speaking-final-item ${spoken[index] ? 'done' : ''}`} key={item.prompt}>
+                <SceneArt type={item.scene} compact />
+                <div>
+                  <strong>{item.prompt}</strong>
+                  {spoken[index] && <p>{item.answers.join(' / ')}</p>}
+                </div>
+                <button onClick={() => setSpoken(prev => ({ ...prev, [index]: true }))}><Mic2 size={17} /> {spoken[index] ? 'Готово' : 'Сказал вслух'}</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
+  return (
+    <section className="lesson-runner">
+      <div className="lesson-runner-top">
+        <button className="lesson-exit-btn" onClick={onExit}><ChevronLeft size={18} /> К урокам</button>
+        <div className="lesson-step-copy"><span>Урок {lesson.position}</span><strong>{step + 1} / {screens.length}</strong></div>
+        <div className="lesson-screen-progress"><i style={{ width: `${((step + 1) / screens.length) * 100}%` }} /></div>
+      </div>
+
+      <div className="lesson-stage" key={screen.id}>
+        {renderScreen()}
+      </div>
+
+      <div className="lesson-runner-footer">
+        <button className="lesson-secondary-action" onClick={previous} disabled={step === 0}>Назад</button>
+        <button className="lesson-primary-action" onClick={next} disabled={!complete}>
+          {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={17} />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function LessonPage({ moduleData, block, lesson, loading, onBackToBlock, onProgress }) {
+  if (loading || !lesson) {
+    return <main className="main-content learning-page"><div className="course-loading">Загружаем урок из базы…</div></main>;
+  }
+
+  if (lesson.status !== 'ready' || !lesson.content) {
+    return (
+      <main className="main-content learning-page">
+        <div className="learning-breadcrumbs">
+          <button onClick={onBackToBlock}>Блок {block.position}</button><span>/</span><strong>Урок {lesson.position}</strong>
+        </div>
+        <section className="lesson-outline-page">
+          <span className="learning-kicker">Модуль {moduleData.position} · Блок {block.position} · Урок {lesson.position}</span>
+          <h1>{lesson.title}</h1>
+          <p>{lesson.description}</p>
+          <div className="lesson-outline-objective"><strong>Задача урока</strong><span>{lesson.objective}</span></div>
+          <div className="lesson-outline-status"><BookOpen size={22} /><div><strong>Структура урока сохранена</strong><span>Подробные экраны и упражнения для этого урока пока не загружены.</span></div></div>
+          <button className="lesson-secondary-wide" onClick={onBackToBlock}><ChevronLeft size={17} /> Вернуться к урокам блока</button>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="main-content learning-page lesson-player-page">
+      <div className="learning-breadcrumbs">
+        <button onClick={onBackToBlock}>Блок {block.position}</button><span>/</span><strong>Урок {lesson.position} · {lesson.title}</strong>
+      </div>
+      <LessonRunner lesson={lesson} onProgress={onProgress} onExit={onBackToBlock} />
     </main>
   );
 }
@@ -510,9 +908,11 @@ function App() {
   const [blocks, setBlocks] = useState([]);
   const [selectedModule, setSelectedModule] = useState(null);
   const [selectedBlock, setSelectedBlock] = useState(null);
+  const [selectedLesson, setSelectedLesson] = useState(null);
   const [courseLoading, setCourseLoading] = useState(true);
   const [blocksLoading, setBlocksLoading] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [lessonLoading, setLessonLoading] = useState(false);
 
   const [section, setSection] = useState('learn');
   const [renderedSection, setRenderedSection] = useState('learn');
@@ -561,6 +961,7 @@ function App() {
     setLearningView('modules');
     setSelectedModule(null);
     setSelectedBlock(null);
+    setSelectedLesson(null);
     setBlocks([]);
     setActiveItem('Все модули');
     window.history.replaceState({}, '', '/learn/modules');
@@ -585,6 +986,7 @@ function App() {
   const openModule = async moduleData => {
     setSelectedModule(moduleData);
     setSelectedBlock(null);
+    setSelectedLesson(null);
     setLearningView('blocks');
     setActiveItem('Все модули');
     window.history.replaceState({}, '', `/learn/module-${moduleData.position}`);
@@ -605,6 +1007,42 @@ function App() {
       setSelectedBlock(block);
     } finally {
       setBlockLoading(false);
+    }
+  };
+
+  const openLesson = async lesson => {
+    setSelectedLesson(lesson);
+    setLessonLoading(true);
+    setLearningView('lesson');
+    window.history.replaceState({}, '', `/learn/module-${selectedModule.position}/block-${selectedBlock.position}/lesson-${lesson.position}`);
+
+    try {
+      const response = await fetch(`/api/course/lessons/${lesson.id}`);
+      if (!response.ok) throw new Error('Failed to load lesson');
+      setSelectedLesson(await response.json());
+    } catch {
+      setSelectedLesson(lesson);
+    } finally {
+      setLessonLoading(false);
+    }
+  };
+
+  const updateLessonProgress = async progress => {
+    if (!selectedLesson?.id) return;
+    setSelectedLesson(current => current ? { ...current, progress } : current);
+    setSelectedBlock(current => current ? {
+      ...current,
+      lessons: (current.lessons || []).map(item => item.id === selectedLesson.id ? { ...item, progress } : item),
+    } : current);
+
+    try {
+      await fetch(`/api/lessons/${selectedLesson.id}/progress`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ progress }),
+      });
+    } catch {
+      // Keep local lesson progress responsive if the API is temporarily unavailable.
     }
   };
 
@@ -659,6 +1097,24 @@ function App() {
           loading={blockLoading}
           onBackToModules={openModules}
           onBackToModule={() => openModule(selectedModule)}
+          onOpenLesson={openLesson}
+        />
+      );
+    }
+
+    if (learningView === 'lesson' && selectedModule && selectedBlock) {
+      return (
+        <LessonPage
+          moduleData={selectedModule}
+          block={selectedBlock}
+          lesson={selectedLesson}
+          loading={lessonLoading}
+          onBackToBlock={() => {
+            setLearningView('block');
+            setSelectedLesson(null);
+            window.history.replaceState({}, '', `/learn/module-${selectedModule.position}/block-${selectedBlock.position}`);
+          }}
+          onProgress={updateLessonProgress}
         />
       );
     }
@@ -674,7 +1130,7 @@ function App() {
   };
 
   const centerKey = renderedSection === 'learn'
-    ? `learn-${learningView}-${selectedModule?.id || 0}-${selectedBlock?.id || 0}`
+    ? `learn-${learningView}-${selectedModule?.id || 0}-${selectedBlock?.id || 0}-${selectedLesson?.id || 0}`
     : renderedSection;
 
   const currentLearningLabel = dashboard?.currentModule && dashboard?.currentBlock
