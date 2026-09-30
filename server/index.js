@@ -78,8 +78,8 @@ async function getStorageSettings() {
       endpoint: 'https://s3.regru.cloud',
       region: 'us-east-1',
       bucket: 'английский',
-      projectId: '9170a58a-2e99-4b39-ba2f-2b0f30c509aa',
-      accessKeyId: 'G2EK9ER0Y1IXEHRWJ6QR',
+      projectId: '',
+      accessKeyId: '',
     },
   });
 }
@@ -544,8 +544,8 @@ app.patch('/api/admin/storage-settings', async (req, res) => {
         endpoint: data.endpoint || 'https://s3.regru.cloud',
         region: data.region || 'us-east-1',
         bucket: data.bucket || 'английский',
-        projectId: data.projectId || '9170a58a-2e99-4b39-ba2f-2b0f30c509aa',
-        accessKeyId: data.accessKeyId || 'G2EK9ER0Y1IXEHRWJ6QR',
+        projectId: data.projectId || '',
+        accessKeyId: data.accessKeyId || '',
         secretAccessKeyEncrypted: data.secretAccessKeyEncrypted || null,
       },
     });
