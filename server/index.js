@@ -229,7 +229,9 @@ const expandReusableAudioPhrase = value => {
   const phrase = asString(value).trim();
   if (!phrase) return [];
   const parts = phrase.split(/\s*[—–-]\s*/).map(part => part.trim()).filter(Boolean);
-  if (parts.length > 1 && parts.every(part => /^[A-Za-z]$/.test(part))) return parts;
+  if (parts.length > 1 && parts.every(part => /^[A-Za-z][.!?]?$/.test(part))) {
+    return parts.map(part => part.replace(/[.!?]+$/, ''));
+  }
   return [phrase];
 };
 
