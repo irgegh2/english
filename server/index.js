@@ -279,6 +279,25 @@ const pushAudioCandidate = (list, value) => {
   if (looksLikeEnglishAudio(text)) list.push(text);
 };
 
+function collectScreenListeningTexts(screen) {
+  const texts = [];
+  const add = value => {
+    const text = asString(value).trim();
+    if (looksLikeEnglishAudio(text)) texts.push(text);
+  };
+
+  if (screen?.type === 'listeningChoice') add(screen.audio);
+  if (screen?.type === 'listeningDialog') {
+    for (const line of screen.audioLines || []) add(line);
+  }
+  if (screen?.type === 'specTask' && screen?.mode === 'listening') {
+    add(screen.audio);
+    for (const phrase of screen.audioPhrases || []) add(phrase);
+  }
+
+  return [...new Set(texts)];
+}
+
 function collectScreenAutoAudioTexts(screen) {
   const texts = [];
   pushAudioCandidate(texts, screen?.phrase);
@@ -371,6 +390,7 @@ async function hydrateLessonsContent(lessons = []) {
         ? screen.audioPhrases.flatMap(phrase => expandReusableAudioPhrase(phrase).flatMap(audioLookupKeys))
         : []),
       ...collectScreenAutoAudioTexts(screen).flatMap(audioLookupKeys),
+      ...collectScreenListeningTexts(screen).flatMap(audioLookupKeys),
     ])).filter(Boolean)
   )];
 
@@ -441,6 +461,14 @@ async function hydrateLessonsContent(lessons = []) {
             if (files) autoAudio[normalizeAudioPhrase(stripAudioPunctuation(text))] = files;
           }
           if (Object.keys(autoAudio).length) next.resolvedAudioByText = autoAudio;
+
+          const listeningTexts = collectScreenListeningTexts(screen);
+          if (listeningTexts.length) {
+            next.resolvedListeningAudioSequence = listeningTexts.map(text => ({
+              text,
+              audioFiles: resolveAudioForText(audioByKey, text) || {},
+            }));
+          }
 
           const mediaId = Number(screen?.mediaId);
           const explicitMedia = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
