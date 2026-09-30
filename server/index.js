@@ -5,6 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
+import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -19,18 +20,7 @@ app.use(express.json({ limit: '8mb' }));
 app.use('/uploads', express.static(uploadRoot));
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination(req, _file, cb) {
-      const folder = req.params.kind === 'image' ? 'images' : 'audio';
-      const destination = path.join(uploadRoot, folder);
-      fs.mkdirSync(destination, { recursive: true });
-      cb(null, destination);
-    },
-    filename(_req, file, cb) {
-      const ext = path.extname(file.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
-      cb(null, `${Date.now()}-${crypto.randomUUID()}${ext || ''}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: 30 * 1024 * 1024 },
   fileFilter(req, file, cb) {
     const kind = req.params.kind;
@@ -42,6 +32,173 @@ const upload = multer({
     cb(valid ? null : new Error('Unsupported media type'), valid);
   },
 });
+
+const STORAGE_SETTINGS_ID = 1;
+const STORAGE_MASTER_KEY = process.env.STORAGE_MASTER_KEY || '';
+
+function storageEncryptionKey() {
+  if (!STORAGE_MASTER_KEY) return null;
+  return crypto.createHash('sha256').update(STORAGE_MASTER_KEY).digest();
+}
+
+function encryptStorageSecret(value) {
+  const key = storageEncryptionKey();
+  if (!key) throw new Error('STORAGE_MASTER_KEY не задан. Выполни команду настройки из README и перезапусти сервер.');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(String(value), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return ['v1', iv.toString('base64'), tag.toString('base64'), encrypted.toString('base64')].join('.');
+}
+
+function decryptStorageSecret(payload) {
+  if (!payload) return '';
+  const key = storageEncryptionKey();
+  if (!key) throw new Error('STORAGE_MASTER_KEY не задан. Невозможно расшифровать Secret Access Key.');
+  const [version, ivB64, tagB64, dataB64] = String(payload).split('.');
+  if (version !== 'v1' || !ivB64 || !tagB64 || !dataB64) {
+    throw new Error('Неверный формат зашифрованного Secret Access Key');
+  }
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
+  decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
+  return Buffer.concat([
+    decipher.update(Buffer.from(dataB64, 'base64')),
+    decipher.final(),
+  ]).toString('utf8');
+}
+
+async function getStorageSettings() {
+  return prisma.storageSettings.upsert({
+    where: { id: STORAGE_SETTINGS_ID },
+    update: {},
+    create: {
+      id: STORAGE_SETTINGS_ID,
+      provider: 'reg-s3',
+      endpoint: 'https://s3.regru.cloud',
+      region: 'us-east-1',
+      bucket: 'английский',
+      projectId: '9170a58a-2e99-4b39-ba2f-2b0f30c509aa',
+      accessKeyId: 'G2EK9ER0Y1IXEHRWJ6QR',
+    },
+  });
+}
+
+function serializeStorageSettings(settings) {
+  return {
+    id: settings.id,
+    provider: settings.provider,
+    endpoint: settings.endpoint,
+    region: settings.region,
+    bucket: settings.bucket,
+    projectId: settings.projectId,
+    accessKeyId: settings.accessKeyId,
+    hasSecretAccessKey: Boolean(settings.secretAccessKeyEncrypted),
+    encryptionReady: Boolean(storageEncryptionKey()),
+    updatedAt: settings.updatedAt,
+  };
+}
+
+function createStorageClient(settings) {
+  const secretAccessKey = decryptStorageSecret(settings.secretAccessKeyEncrypted);
+  if (!settings.endpoint || !settings.bucket || !settings.accessKeyId || !secretAccessKey) {
+    throw new Error('S3 настроен не полностью: нужны endpoint, bucket, Access Key и Secret Key.');
+  }
+
+  return new S3Client({
+    endpoint: settings.endpoint,
+    region: settings.region || 'us-east-1',
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: settings.accessKeyId,
+      secretAccessKey,
+    },
+  });
+}
+
+function storageObjectKey(kind, originalName = '') {
+  const folder = kind === 'image' ? 'images' : 'audio';
+  const ext = path.extname(originalName || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
+  return `${folder}/${Date.now()}-${crypto.randomUUID()}${ext || ''}`;
+}
+
+function storagePublicUrl(settings, key) {
+  const endpoint = String(settings.endpoint || '').replace(/\/+$/, '');
+  const bucket = encodeURIComponent(settings.bucket);
+  const encodedKey = key.split('/').map(encodeURIComponent).join('/');
+  return `${endpoint}/${bucket}/${encodedKey}`;
+}
+
+async function uploadBufferToStorage({ kind, buffer, originalName, mimeType }) {
+  const settings = await getStorageSettings();
+  const client = createStorageClient(settings);
+  const key = storageObjectKey(kind, originalName);
+
+  await client.send(new PutObjectCommand({
+    Bucket: settings.bucket,
+    Key: key,
+    Body: buffer,
+    ContentType: mimeType || 'application/octet-stream',
+    ACL: 'public-read',
+  }));
+
+  return {
+    url: storagePublicUrl(settings, key),
+    key,
+    bucket: settings.bucket,
+    provider: 'reg-s3',
+  };
+}
+
+async function uploadFileToStorage(kind, file) {
+  const stored = await uploadBufferToStorage({
+    kind,
+    buffer: file.buffer,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+  });
+
+  return {
+    ...stored,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size,
+  };
+}
+
+function localUploadAbsolutePath(url) {
+  if (!String(url || '').startsWith('/uploads/')) return null;
+  const relative = String(url).replace(/^\/uploads\//, '');
+  const absolute = path.resolve(uploadRoot, relative);
+  return absolute.startsWith(uploadRoot) ? absolute : null;
+}
+
+async function migrateOneLocalUpload(url) {
+  const absolute = localUploadAbsolutePath(url);
+  if (!absolute || !fs.existsSync(absolute)) return null;
+  const relative = path.relative(uploadRoot, absolute);
+  const kind = relative.startsWith(`images${path.sep}`) ? 'image' : 'audio';
+  const buffer = await fs.promises.readFile(absolute);
+  const stored = await uploadBufferToStorage({
+    kind,
+    buffer,
+    originalName: path.basename(absolute),
+    mimeType: kind === 'image' ? 'image/*' : 'audio/*',
+  });
+  return stored.url;
+}
+
+async function deleteStorageUrl(url) {
+  const settings = await getStorageSettings();
+  const endpoint = String(settings.endpoint || '').replace(/\/+$/, '');
+  const prefix = `${endpoint}/${encodeURIComponent(settings.bucket)}/`;
+  if (!String(url || '').startsWith(prefix)) return false;
+
+  const encodedKey = String(url).slice(prefix.length);
+  const key = encodedKey.split('/').map(decodeURIComponent).join('/');
+  const client = createStorageClient(settings);
+  await client.send(new DeleteObjectCommand({ Bucket: settings.bucket, Key: key }));
+  return true;
+}
 
 const clampProgress = value => Math.max(0, Math.min(100, Number(value ?? 0)));
 const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -331,6 +488,140 @@ app.patch('/api/lessons/:id/progress', async (req, res) => {
 /* ===========================
    Admin API
    =========================== */
+
+app.get('/api/admin/storage-settings', async (_req, res) => {
+  try {
+    const settings = await getStorageSettings();
+    res.json(serializeStorageSettings(settings));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/storage-settings', async (req, res) => {
+  try {
+    const data = {};
+    if ('endpoint' in req.body) data.endpoint = asString(req.body.endpoint).trim();
+    if ('region' in req.body) data.region = asString(req.body.region).trim() || 'us-east-1';
+    if ('bucket' in req.body) data.bucket = asString(req.body.bucket).trim();
+    if ('projectId' in req.body) data.projectId = asString(req.body.projectId).trim();
+    if ('accessKeyId' in req.body) data.accessKeyId = asString(req.body.accessKeyId).trim();
+
+    const secretAccessKey = asString(req.body.secretAccessKey).trim();
+    if (secretAccessKey) data.secretAccessKeyEncrypted = encryptStorageSecret(secretAccessKey);
+
+    const settings = await prisma.storageSettings.upsert({
+      where: { id: STORAGE_SETTINGS_ID },
+      update: data,
+      create: {
+        id: STORAGE_SETTINGS_ID,
+        provider: 'reg-s3',
+        endpoint: data.endpoint || 'https://s3.regru.cloud',
+        region: data.region || 'us-east-1',
+        bucket: data.bucket || 'английский',
+        projectId: data.projectId || '9170a58a-2e99-4b39-ba2f-2b0f30c509aa',
+        accessKeyId: data.accessKeyId || 'G2EK9ER0Y1IXEHRWJ6QR',
+        secretAccessKeyEncrypted: data.secretAccessKeyEncrypted || null,
+      },
+    });
+
+    res.json(serializeStorageSettings(settings));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/storage-settings/test', async (_req, res) => {
+  try {
+    const settings = await getStorageSettings();
+    const client = createStorageClient(settings);
+    await client.send(new HeadBucketCommand({ Bucket: settings.bucket }));
+    res.json({ ok: true, message: 'Подключение к REG.RU S3 работает.' });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/storage-settings/migrate-local-uploads', async (_req, res) => {
+  try {
+    const migrated = new Map();
+    const resolveUrl = async url => {
+      if (!String(url || '').startsWith('/uploads/')) return url;
+      if (migrated.has(url)) return migrated.get(url);
+      const next = await migrateOneLocalUpload(url);
+      if (!next) return url;
+      migrated.set(url, next);
+      return next;
+    };
+
+    const voices = await prisma.voiceProfile.findMany();
+    for (const voice of voices) {
+      if (!voice.previewUrl?.startsWith('/uploads/')) continue;
+      await prisma.voiceProfile.update({
+        where: { id: voice.id },
+        data: { previewUrl: await resolveUrl(voice.previewUrl) },
+      });
+    }
+
+    const audioPhrases = await prisma.audioPhrase.findMany();
+    for (const phrase of audioPhrases) {
+      const audioFiles = sanitizeAudioFiles(phrase.audioFiles);
+      let changed = false;
+      for (const voiceId of Object.keys(audioFiles)) {
+        if (!audioFiles[voiceId]?.startsWith('/uploads/')) continue;
+        audioFiles[voiceId] = await resolveUrl(audioFiles[voiceId]);
+        changed = true;
+      }
+      if (changed) {
+        await prisma.audioPhrase.update({ where: { id: phrase.id }, data: { audioFiles } });
+      }
+    }
+
+    const mediaAssets = await prisma.mediaAsset.findMany();
+    for (const asset of mediaAssets) {
+      if (!asset.url?.startsWith('/uploads/')) continue;
+      await prisma.mediaAsset.update({
+        where: { id: asset.id },
+        data: { url: await resolveUrl(asset.url) },
+      });
+    }
+
+    const lessons = await prisma.lesson.findMany({ select: { id: true, content: true } });
+    for (const lesson of lessons) {
+      const content = lesson.content;
+      if (!content || typeof content !== 'object' || !Array.isArray(content.screens)) continue;
+      let changed = false;
+      const screens = [];
+      for (const screen of content.screens) {
+        const next = { ...screen };
+        if (next.imageUrl?.startsWith('/uploads/')) {
+          next.imageUrl = await resolveUrl(next.imageUrl);
+          changed = true;
+        }
+        if (next.audioFiles && typeof next.audioFiles === 'object') {
+          const audioFiles = { ...next.audioFiles };
+          for (const voiceId of Object.keys(audioFiles)) {
+            if (!audioFiles[voiceId]?.startsWith('/uploads/')) continue;
+            audioFiles[voiceId] = await resolveUrl(audioFiles[voiceId]);
+            changed = true;
+          }
+          next.audioFiles = audioFiles;
+        }
+        screens.push(next);
+      }
+      if (changed) {
+        await prisma.lesson.update({
+          where: { id: lesson.id },
+          data: { content: { ...content, screens } },
+        });
+      }
+    }
+
+    res.json({ ok: true, migrated: migrated.size });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
 app.get('/api/admin/voices', async (_req, res) => {
   try {
@@ -758,32 +1049,37 @@ app.delete('/api/admin/lessons/:id', async (req, res) => {
 app.post('/api/admin/upload/:kind', (req, res, next) => {
   if (!['audio', 'image'].includes(req.params.kind)) return res.status(400).json({ error: 'Invalid media kind' });
   next();
-}, upload.single('file'), (req, res) => {
+}, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'File is required' });
-  const folder = req.params.kind === 'image' ? 'images' : 'audio';
-  res.status(201).json({
-    url: `/uploads/${folder}/${req.file.filename}`,
-    filename: req.file.filename,
-    originalName: req.file.originalname,
-    mimeType: req.file.mimetype,
-    size: req.file.size,
-  });
+
+  try {
+    const stored = await uploadFileToStorage(req.params.kind, req.file);
+    res.status(201).json(stored);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 app.delete('/api/admin/media', async (req, res) => {
   const url = asString(req.body.url);
-  if (!url.startsWith('/uploads/')) return res.status(400).json({ error: 'Invalid media URL' });
-
-  const relative = url.replace(/^\/uploads\//, '');
-  const absolute = path.resolve(uploadRoot, relative);
-  if (!absolute.startsWith(uploadRoot)) return res.status(400).json({ error: 'Invalid media path' });
+  if (!url) return res.status(400).json({ error: 'Media URL is required' });
 
   try {
-    await fs.promises.unlink(absolute);
+    const absolute = localUploadAbsolutePath(url);
+    if (absolute) {
+      try {
+        await fs.promises.unlink(absolute);
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
+      return res.json({ ok: true, storage: 'local' });
+    }
+
+    const deletedFromS3 = await deleteStorageUrl(url);
+    res.json({ ok: true, storage: deletedFromS3 ? 's3' : 'external' });
   } catch (error) {
-    if (error.code !== 'ENOENT') return res.status(400).json({ error: error.message });
+    res.status(400).json({ error: error.message });
   }
-  res.json({ ok: true });
 });
 
 app.use((error, _req, res, _next) => {
