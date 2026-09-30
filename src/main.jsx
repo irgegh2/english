@@ -1088,6 +1088,12 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   };
 
   const lessonPercent = Math.round(((step + 1) / screens.length) * 100);
+  const itemCount = Array.isArray(screen.items) ? screen.items.length : 0;
+  const isDenseScreen =
+    (['multiChoice', 'listeningDialog'].includes(screen.type) && itemCount >= 4) ||
+    (screen.type === 'classify' && itemCount >= 5) ||
+    (screen.type === 'pronunciation' && (screen.phrases || []).length >= 5) ||
+    (screen.type === 'speakingFinal' && itemCount >= 4);
 
   return (
     <section className="lesson-runner" ref={lessonRunnerRef}>
@@ -1109,7 +1115,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         </div>
       </div>
 
-      <div className={`lesson-stage ${confirmation.status === 'correct' ? 'answer-success' : confirmation.status === 'wrong' ? 'answer-error' : ''}`} key={screen.id}>
+      <div className={`lesson-stage ${isDenseScreen ? 'dense-screen' : ''} ${confirmation.status === 'correct' ? 'answer-success' : confirmation.status === 'wrong' ? 'answer-error' : ''}`} key={screen.id}>
         {renderScreen()}
       </div>
 
