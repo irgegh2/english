@@ -1333,6 +1333,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [spoken, setSpoken] = useState({});
   const [finished, setFinished] = useState(false);
   const [confirmation, setConfirmation] = useState({ status: 'idle' });
+  const [sessionStats, setSessionStats] = useState({ correctChecks: 0, wrongAttempts: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const lessonRunnerRef = useRef(null);
   const completionSoundPlayedRef = useRef(false);
@@ -1500,9 +1501,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
     if (answerIsCorrect) {
       setConfirmation({ status: 'correct' });
+      setSessionStats(current => ({ ...current, correctChecks: current.correctChecks + 1 }));
       playUiSound('success');
     } else {
       setConfirmation({ status: 'wrong' });
+      setSessionStats(current => ({ ...current, wrongAttempts: current.wrongAttempts + 1 }));
       playUiSound('error');
     }
   };
@@ -1568,6 +1571,13 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
               <div key={item} style={{ '--outcome-index': index }}><Check size={15} />{item}</div>
             ))}
           </div>
+          {(sessionStats.correctChecks > 0 || sessionStats.wrongAttempts > 0) && (
+            <div className="lesson-session-stats">
+              <div><strong>{sessionStats.correctChecks}</strong><span>проверенных заданий</span></div>
+              <div><strong>{sessionStats.wrongAttempts}</strong><span>ошибочных попыток</span></div>
+              <div><strong>{sessionStats.wrongAttempts === 0 ? '✓' : '↻'}</strong><span>{sessionStats.wrongAttempts === 0 ? 'без ошибок' : 'ошибки отработаны'}</span></div>
+            </div>
+          )}
           <button className="lesson-primary-action lesson-finish-action" onClick={exitLesson}>
             Вернуться к урокам <ArrowRight size={17} />
           </button>
