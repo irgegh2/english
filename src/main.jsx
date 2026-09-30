@@ -287,7 +287,7 @@ function ModulesPage({ modules, loading, currentModulePosition, onOpenModule }) 
         <div>
           <span className="learning-kicker">British English · полный курс</span>
           <h1>Все модули</h1>
-          <p>35 модулей курса. Внутри каждого модуля находятся тематические блоки, а содержание уроков добавим следующим этапом.</p>
+          <p>35 модулей курса. Внутри каждого модуля находятся тематические блоки, которые постепенно наполняются уроками.</p>
         </div>
         <div className="course-summary">
           <strong>{modules.length || 35}</strong>
@@ -366,11 +366,11 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
               </div>
               <div className="block-copy">
                 <div className="block-topline">
-                  <span><BookOpen size={13} /> содержание позже</span>
+                  <span><BookOpen size={13} /> {block.lessonCount > 0 ? `${block.lessonCount} уроков` : 'содержание позже'}</span>
                   {isCurrentModule && block.position === currentBlockPosition && <span className="block-current-label">текущий блок</span>}
                 </div>
                 <h3>{block.title}</h3>
-                <p>Уроки и материалы этого блока пока не добавлены.</p>
+                <p>{block.lessonCount > 0 ? 'Структура уроков уже загружена.' : 'Уроки и материалы этого блока пока не добавлены.'}</p>
               </div>
               <span className="block-arrow"><ArrowRight size={17} /></span>
             </button>
