@@ -46,6 +46,7 @@ const upload = multer({
 const clampProgress = value => Math.max(0, Math.min(100, Number(value ?? 0)));
 const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const asString = (value, fallback = '') => value == null ? fallback : String(value);
+const VOICE_IDS = new Set(['ella', 'grace', 'chloe', 'oliver', 'james', 'theo']);
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -190,11 +191,19 @@ app.get('/api/course/lessons/:id', async (req, res) => {
   }
 });
 
+app.get('/api/voices', async (_req, res) => {
+  try {
+    const voices = await prisma.voiceProfile.findMany({ orderBy: { position: 'asc' } });
+    res.json(voices);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.patch('/api/profile/settings', async (req, res) => {
-  const allowedVoices = new Set(['ella', 'grace', 'chloe', 'oliver', 'james', 'theo']);
   const voicePreset = String(req.body.voicePreset || '');
 
-  if (!allowedVoices.has(voicePreset)) {
+  if (!VOICE_IDS.has(voicePreset)) {
     return res.status(400).json({ error: 'Invalid voice preset' });
   }
 
@@ -224,6 +233,34 @@ app.patch('/api/lessons/:id/progress', async (req, res) => {
 /* ===========================
    Admin API
    =========================== */
+
+app.get('/api/admin/voices', async (_req, res) => {
+  try {
+    const voices = await prisma.voiceProfile.findMany({ orderBy: { position: 'asc' } });
+    res.json(voices);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/voices/:id', async (req, res) => {
+  const id = asString(req.params.id);
+  if (!VOICE_IDS.has(id)) return res.status(400).json({ error: 'Invalid voice id' });
+
+  try {
+    const data = {};
+    if ('name' in req.body) data.name = asString(req.body.name);
+    if ('gender' in req.body) data.gender = asString(req.body.gender);
+    if ('note' in req.body) data.note = asString(req.body.note);
+    if ('sampleText' in req.body) data.sampleText = asString(req.body.sampleText);
+    if ('previewUrl' in req.body) data.previewUrl = req.body.previewUrl ? asString(req.body.previewUrl) : null;
+
+    const voice = await prisma.voiceProfile.update({ where: { id }, data });
+    res.json(voice);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
 
 app.get('/api/admin/tree', async (_req, res) => {
   try {
