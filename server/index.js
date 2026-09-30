@@ -156,6 +156,25 @@ app.get('/api/course/lessons/:id', async (req, res) => {
   }
 });
 
+app.patch('/api/profile/settings', async (req, res) => {
+  const allowedVoices = new Set(['ella', 'grace', 'chloe', 'oliver', 'james', 'theo']);
+  const voicePreset = String(req.body.voicePreset || '');
+
+  if (!allowedVoices.has(voicePreset)) {
+    return res.status(400).json({ error: 'Invalid voice preset' });
+  }
+
+  try {
+    const profile = await prisma.profile.update({
+      where: { id: 1 },
+      data: { voicePreset },
+    });
+    res.json(profile);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 app.patch('/api/lessons/:id/progress', async (req, res) => {
   const id = Number(req.params.id);
   const progress = Math.max(0, Math.min(100, Number(req.body.progress ?? 0)));
