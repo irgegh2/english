@@ -53,7 +53,6 @@ const collectAutoAudioTexts = screen => {
     if (looksLikeEnglishAudio(text)) values.push(text);
   };
 
-  add(screen?.audio);
   add(screen?.phrase);
   add(screen?.reply);
   add(screen?.prompt);
@@ -744,7 +743,7 @@ function ScreenFields({ screen, onChange, audioDictionary, mediaLibrary }) {
 
       <ImageLibraryPicker screen={screen} onChange={onChange} mediaLibrary={mediaLibrary} />
 
-      {(screen.type === 'listeningChoice' || screen.type === 'listeningDialog') && (
+      {(screen.type === 'listeningChoice' || screen.type === 'listeningDialog' || (screen.type === 'specTask' && screen.mode === 'listening')) && (
         <DirectLessonAudioField screen={screen} onChange={onChange} />
       )}
 
