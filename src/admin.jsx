@@ -392,8 +392,34 @@ function ImageLibraryPicker({ screen, onChange, mediaLibrary = [] }) {
   );
 }
 
-function DirectLessonAudioField({ screen, onChange }) {
+function getListeningFallbackPhrases(screen) {
+  if (screen?.type === 'listeningChoice') {
+    return screen.audio ? [screen.audio] : [];
+  }
+  if (screen?.type === 'listeningDialog') {
+    return Array.isArray(screen.audioLines) ? screen.audioLines.filter(Boolean) : [];
+  }
+  if (screen?.type === 'specTask' && screen?.mode === 'listening') {
+    if (Array.isArray(screen.audioPhrases) && screen.audioPhrases.length) return screen.audioPhrases.filter(Boolean);
+    return screen.audio ? [screen.audio] : [];
+  }
+  return [];
+}
+
+function DirectLessonAudioField({ screen, onChange, audioDictionary = [] }) {
   const files = screen.audioFiles || {};
+  const fallbackPhrases = getListeningFallbackPhrases(screen);
+  const fallbackReadyByVoice = Object.fromEntries(
+    VOICES.map(([voiceId]) => [
+      voiceId,
+      fallbackPhrases.length > 0 && fallbackPhrases.every(phrase => {
+        const entry = findAudioDictionaryEntry(audioDictionary, phrase);
+        return Boolean(entry?.audioFiles?.[voiceId]);
+      }),
+    ])
+  );
+  const fallbackReadyCount = VOICES.filter(([voiceId]) => fallbackReadyByVoice[voiceId]).length;
+
   const update = (voiceId, url) => {
     const next = { ...files };
     if (url) next[voiceId] = url;
@@ -405,11 +431,22 @@ function DirectLessonAudioField({ screen, onChange }) {
     <section className="admin-media-section admin-direct-audio-section">
       <div className="admin-section-minihead">
         <div><FileAudio size={18} /><strong>Аудио именно этого задания</strong></div>
-        <span>не берётся из аудиословаря</span>
+        <span>имеет приоритет над словарным fallback</span>
       </div>
       <p className="admin-audio-reference-help">
-        Используй для аудирования, где ученик сначала слышит конкретную запись. Файл хранится прямо в задании отдельно для каждого голоса.
+        Используй для аудирования, где ученик сначала слышит конкретную запись. Файл хранится прямо в задании отдельно для каждого голоса. Если конкретный файл ещё не загружен, урок временно попробует взять указанную ниже фразу/реплики из общего аудиословаря.
       </p>
+
+      {fallbackPhrases.length > 0 && (
+        <div className={`admin-listening-fallback ${fallbackReadyCount ? 'ready' : 'missing'}`}>
+          <div>
+            <strong>Fallback из аудиословаря</strong>
+            <span>{fallbackPhrases.join(' · ')}</span>
+          </div>
+          <em>{fallbackReadyCount}/{VOICES.length} голосов полностью готовы</em>
+        </div>
+      )}
+
       <div className="admin-audio-grid">
         {VOICES.map(([id, name, gender]) => (
           <MediaUploader
@@ -672,14 +709,27 @@ function ScreenFields({ screen, onChange, audioDictionary, mediaLibrary }) {
 
       {(screen.type === 'choice' || screen.type === 'listeningChoice') && <>
         {screen.type === 'choice' && <Field label="Вопрос / слово" wide><TextInput value={screen.prompt} onChange={value => set('prompt', value)} /></Field>}
+        {screen.type === 'listeningChoice' && (
+          <Field label="Fallback-фраза из аудиословаря" wide hint="Используется только пока для выбранного голоса не загружено отдельное аудио этого задания.">
+            <TextInput value={screen.audio || ''} placeholder="Например: Hi" onChange={value => set('audio', value)} />
+          </Field>
+        )}
         <LinesEditor label="Варианты ответа" value={screen.options} onChange={value => set('options', value)} />
         <Field label="Правильный ответ"><TextInput value={screen.answer} onChange={value => set('answer', value)} /></Field>
         <Field label="Подсказка"><TextInput value={screen.hint} onChange={value => set('hint', value)} /></Field>
       </>}
 
-      {(screen.type === 'multiChoice' || screen.type === 'listeningDialog') &&
+      {(screen.type === 'multiChoice' || screen.type === 'listeningDialog') && <>
+        {screen.type === 'listeningDialog' && (
+          <LinesEditor
+            label="Fallback-реплики диалога"
+            value={screen.audioLines || []}
+            onChange={value => set('audioLines', value)}
+            placeholder="Одна реплика на строку"
+          />
+        )}
         <QuestionsEditor items={screen.items || []} withScene onChange={value => set('items', value)} />
-      }
+      </>}
 
       {screen.type === 'classify' && <>
         <LinesEditor label="Категории" value={screen.categories} onChange={value => set('categories', value)} />
@@ -744,7 +794,7 @@ function ScreenFields({ screen, onChange, audioDictionary, mediaLibrary }) {
       <ImageLibraryPicker screen={screen} onChange={onChange} mediaLibrary={mediaLibrary} />
 
       {(screen.type === 'listeningChoice' || screen.type === 'listeningDialog' || (screen.type === 'specTask' && screen.mode === 'listening')) && (
-        <DirectLessonAudioField screen={screen} onChange={onChange} />
+        <DirectLessonAudioField screen={screen} onChange={onChange} audioDictionary={audioDictionary} />
       )}
 
       <AutoAudioStatus screen={screen} audioDictionary={audioDictionary} />
