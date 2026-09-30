@@ -463,6 +463,33 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 
 let activeLessonAudio = null;
 
+const UI_SOUNDS = {
+  click: '/assets/sounds/mclick.mp3',
+  success: '/assets/sounds/success.mp3',
+  error: '/assets/sounds/error.mp3',
+  end: '/assets/sounds/end.mp3',
+};
+
+function playUiSound(name) {
+  const url = UI_SOUNDS[name];
+  if (!url || typeof window === 'undefined') return;
+
+  const audio = new Audio(url);
+  audio.volume = name === 'click' ? 0.38 : name === 'end' ? 0.72 : 0.62;
+  audio.play().catch(() => {});
+}
+
+function installGlobalClickSound() {
+  if (typeof document === 'undefined') return;
+
+  document.addEventListener('click', event => {
+    const target = event.target instanceof Element ? event.target : null;
+    const control = target?.closest('button, a, [role="button"], label.admin-upload-btn');
+    if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true') return;
+    playUiSound('click');
+  }, true);
+}
+
 function getScreenAudio(screen, presetId) {
   return screen?.audioFiles?.[presetId] || '';
 }
@@ -610,18 +637,21 @@ function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule
   );
 }
 
-function ChoiceOptions({ options, answer, selected, onSelect }) {
+function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false, locked = false }) {
   return (
     <div className="lesson-options">
       {options.map(option => {
         const isSelected = selected === option;
-        const isCorrect = isSelected && option === answer;
-        const isWrong = isSelected && option !== answer;
+        const isCorrect = confirmed && isSelected && option === answer;
+        const isWrong = confirmed && isSelected && option !== answer;
+        const stateClass = isCorrect ? 'correct' : isWrong ? 'wrong' : isSelected ? 'selected' : '';
+
         return (
           <button
             key={option}
-            className={`${isCorrect ? 'correct' : ''} ${isWrong ? 'wrong' : ''}`.trim()}
-            onClick={() => onSelect(option)}
+            className={stateClass}
+            onClick={() => !locked && onSelect(option)}
+            disabled={locked}
           >
             <span>{option}</span>
             {isCorrect && <Check size={18} />}
@@ -640,6 +670,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [repeated, setRepeated] = useState({});
   const [spoken, setSpoken] = useState({});
   const [finished, setFinished] = useState(false);
+  const [confirmation, setConfirmation] = useState({ status: 'idle' });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const lessonRunnerRef = useRef(null);
 
@@ -651,6 +682,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     setOrdered([]);
     setRepeated({});
     setSpoken({});
+    setConfirmation({ status: 'idle' });
   }, [step]);
 
   useEffect(() => {
@@ -668,24 +700,66 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   if (!screen) return null;
 
-  const setAnswer = (key, value) => setAnswers(prev => ({ ...prev, [key]: value }));
+  const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type);
 
+  const clearConfirmation = () => {
+    if (confirmation.status !== 'idle') setConfirmation({ status: 'idle' });
+  };
+
+  const setAnswer = (key, value) => {
+    clearConfirmation();
+    setAnswers(prev => ({ ...prev, [key]: value }));
+  };
+
+  const setOrder = updater => {
+    clearConfirmation();
+    setOrdered(updater);
+  };
+
+  const allMultiAnswered = items => items.every((_, index) => answers[index] !== undefined && answers[index] !== null && answers[index] !== '');
   const allMultiCorrect = items => items.every((item, index) => answers[index] === item.answer);
-  const complete = (() => {
-    if (['intro', 'flashcard'].includes(screen.type)) return true;
+
+  const selectionReady = (() => {
+    if (screen.type === 'choice' || screen.type === 'listeningChoice') return Boolean(answers.single);
+    if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') return allMultiAnswered(screen.items || []);
+    if (screen.type === 'classify') return allMultiAnswered(screen.items || []);
+    if (screen.type === 'order') return ordered.length === (screen.answer || []).length;
+    return true;
+  })();
+
+  const answerIsCorrect = (() => {
     if (screen.type === 'choice' || screen.type === 'listeningChoice') return answers.single === screen.answer;
     if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') return allMultiCorrect(screen.items || []);
     if (screen.type === 'classify') return (screen.items || []).every((item, index) => answers[index] === item.answer);
     if (screen.type === 'order') return ordered.join(' ') === (screen.answer || []).join(' ');
+    return true;
+  })();
+
+  const complete = (() => {
+    if (isCheckable) return confirmation.status === 'correct';
+    if (['intro', 'flashcard'].includes(screen.type)) return true;
     if (screen.type === 'pronunciation') return (screen.phrases || []).every((_, index) => repeated[index]);
     if (screen.type === 'speakingFinal') return (screen.items || []).every((_, index) => spoken[index]);
     return true;
   })();
 
+  const confirmAnswer = () => {
+    if (!isCheckable || !selectionReady || confirmation.status !== 'idle') return;
+
+    if (answerIsCorrect) {
+      setConfirmation({ status: 'correct' });
+      playUiSound('success');
+    } else {
+      setConfirmation({ status: 'wrong' });
+      playUiSound('error');
+    }
+  };
+
   const next = () => {
     const progress = Math.round(((step + 1) / screens.length) * 100);
     onProgress(progress);
     if (step >= screens.length - 1) {
+      playUiSound('end');
       setFinished(true);
       return;
     }
@@ -792,8 +866,16 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
               {screenAudio && <LessonAudioButton url={screenAudio} />}
             </>
           )}
-          <ChoiceOptions options={screen.options} answer={screen.answer} selected={answers.single} onSelect={value => setAnswer('single', value)} />
-          {answers.single && <p className={answers.single === screen.answer ? 'lesson-feedback success' : 'lesson-feedback error'}>{answers.single === screen.answer ? 'Верно.' : 'Попробуй ещё раз.'}</p>}
+          <ChoiceOptions
+            options={screen.options}
+            answer={screen.answer}
+            selected={answers.single}
+            onSelect={value => setAnswer('single', value)}
+            confirmed={confirmation.status !== 'idle'}
+            locked={confirmation.status === 'correct'}
+          />
+          {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Верно!</p>}
+          {confirmation.status === 'wrong' && <p className="lesson-feedback error">Неверно. Выбери другой вариант и попробуй ещё раз.</p>}
           {screen.hint && <div className="lesson-hint">{screen.hint}</div>}
         </div>
       );
@@ -812,10 +894,19 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
               <div className="lesson-multi-item" key={index}>
                 {item.scene && <SceneArt type={item.scene} compact imageUrl={item.imageUrl || ''} />}
                 <strong>{item.prompt}</strong>
-                <ChoiceOptions options={item.options} answer={item.answer} selected={answers[index]} onSelect={value => setAnswer(index, value)} />
+                <ChoiceOptions
+                  options={item.options}
+                  answer={item.answer}
+                  selected={answers[index]}
+                  onSelect={value => setAnswer(index, value)}
+                  confirmed={confirmation.status !== 'idle'}
+                  locked={confirmation.status === 'correct'}
+                />
               </div>
             ))}
           </div>
+          {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Всё верно!</p>}
+          {confirmation.status === 'wrong' && <p className="lesson-feedback error">Есть ошибка. Измени выбранный ответ и подтверди ещё раз.</p>}
         </div>
       );
     }
@@ -834,8 +925,13 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
                   {screen.categories.map(category => (
                     <button
                       key={category}
-                      className={answers[index] === category ? (category === item.answer ? 'correct' : 'wrong') : ''}
-                      onClick={() => setAnswer(index, category)}
+                      className={answers[index] === category
+                        ? confirmation.status === 'idle'
+                          ? 'selected'
+                          : category === item.answer ? 'correct' : 'wrong'
+                        : ''}
+                      onClick={() => confirmation.status !== 'correct' && setAnswer(index, category)}
+                      disabled={confirmation.status === 'correct'}
                     >
                       {category === 'Greeting' ? 'Приветствие' : 'Прощание'}
                     </button>
@@ -844,6 +940,8 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
               </div>
             ))}
           </div>
+          {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Всё верно!</p>}
+          {confirmation.status === 'wrong' && <p className="lesson-feedback error">Есть ошибка. Исправь распределение и подтверди ещё раз.</p>}
         </div>
       );
     }
@@ -860,15 +958,16 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <span className="lesson-eyebrow">{screen.eyebrow}</span>
           <h1>{screen.title}</h1>
           {screenAudio && <LessonAudioButton url={screenAudio} />}
-          <div className="sentence-builder">
+          <div className={`sentence-builder ${confirmation.status === 'correct' ? 'confirmed-correct' : confirmation.status === 'wrong' ? 'confirmed-wrong' : ''}`}>
             <div className="sentence-built">
-              {ordered.length ? ordered.map((token, index) => <button key={`${token}-${index}`} onClick={() => setOrdered(current => current.filter((_, i) => i !== index))}>{token}</button>) : <span>Нажимай на слова по порядку</span>}
+              {ordered.length ? ordered.map((token, index) => <button key={`${token}-${index}`} disabled={confirmation.status === 'correct'} onClick={() => setOrder(current => current.filter((_, i) => i !== index))}>{token}</button>) : <span>Нажимай на слова по порядку</span>}
             </div>
             <div className="sentence-tokens">
-              {remaining.map((token, index) => <button key={`${token}-${index}`} onClick={() => setOrdered(current => [...current, token])}>{token}</button>)}
+              {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={confirmation.status === 'correct'} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
             </div>
           </div>
-          {ordered.length > 0 && <p className={complete ? 'lesson-feedback success' : 'lesson-feedback neutral'}>{complete ? 'Фраза собрана правильно.' : 'Продолжай собирать фразу.'}</p>}
+          {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Фраза собрана правильно.</p>}
+          {confirmation.status === 'wrong' && <p className="lesson-feedback error">Порядок пока неверный. Перестрой фразу и подтверди ещё раз.</p>}
         </div>
       );
     }
@@ -940,15 +1039,25 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         </div>
       </div>
 
-      <div className="lesson-stage" key={screen.id}>
+      <div className={`lesson-stage ${confirmation.status === 'correct' ? 'answer-success' : confirmation.status === 'wrong' ? 'answer-error' : ''}`} key={screen.id}>
         {renderScreen()}
       </div>
 
-      <div className="lesson-runner-footer">
+      <div className={`lesson-runner-footer ${confirmation.status !== 'idle' ? `feedback-${confirmation.status}` : ''}`}>
         <button className="lesson-secondary-action" onClick={previous} disabled={step === 0}>Назад</button>
-        <button className="lesson-primary-action" onClick={next} disabled={!complete}>
-          {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={19} />
-        </button>
+        {isCheckable && confirmation.status !== 'correct' ? (
+          <button
+            className="lesson-primary-action lesson-confirm-action"
+            onClick={confirmAnswer}
+            disabled={!selectionReady || confirmation.status === 'wrong'}
+          >
+            {confirmation.status === 'wrong' ? 'Измени ответ' : 'Подтвердить'} <Check size={19} />
+          </button>
+        ) : (
+          <button className="lesson-primary-action" onClick={next} disabled={!complete}>
+            {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={19} />
+          </button>
+        )}
       </div>
     </section>
   );
@@ -1370,4 +1479,5 @@ function App() {
 }
 
 const isAdminRoute = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
+installGlobalClickSound();
 createRoot(document.getElementById('root')).render(isAdminRoute ? <AdminApp /> : <App />);
