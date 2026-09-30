@@ -328,7 +328,7 @@ function collectScreenAutoMediaKeys(screen) {
   ];
 
   for (const item of screen?.items || []) {
-    values.push(item?.mediaKey, item?.scene, item?.imageKey);
+    values.push(item?.mediaKey, item?.scene, item?.answer, item?.imageKey);
   }
 
   return [...new Set(
@@ -465,6 +465,7 @@ async function hydrateLessonsContent(lessons = []) {
               const automaticItemMedia = explicitItemMedia || resolveMediaByValues(mediaByKey, [
                 item?.mediaKey,
                 item?.scene,
+                item?.answer,
                 item?.imageKey,
               ]);
               return automaticItemMedia
