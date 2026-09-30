@@ -260,7 +260,13 @@ const stripAudioPunctuation = value => asString(value)
 const audioLookupKeys = value => {
   const exact = normalizeAudioPhrase(value);
   const stripped = normalizeAudioPhrase(stripAudioPunctuation(value));
-  return [...new Set([exact, stripped].filter(Boolean))];
+  return [...new Set([
+    exact,
+    stripped,
+    stripped ? `${stripped}.` : '',
+    stripped ? `${stripped}!` : '',
+    stripped ? `${stripped}?` : '',
+  ].filter(Boolean))];
 };
 
 const looksLikeEnglishAudio = value => {
@@ -317,6 +323,7 @@ function collectScreenAutoMediaKeys(screen) {
     screen?.mediaKey,
     screen?.scene,
     screen?.phrase,
+    screen?.title,
     screen?.imageKey,
   ];
 
@@ -339,12 +346,18 @@ function resolveAudioForText(audioByKey, value) {
   return null;
 }
 
+const mediaLookupKeys = value => {
+  const exact = normalizeMediaName(value);
+  const stripped = normalizeMediaName(stripAudioPunctuation(value));
+  return [...new Set([exact, stripped].filter(Boolean))];
+};
+
 function resolveMediaByValues(mediaByKey, values = []) {
   for (const value of values) {
-    const key = normalizeMediaName(value);
-    if (!key) continue;
-    const media = mediaByKey.get(key);
-    if (media) return media;
+    for (const key of mediaLookupKeys(value)) {
+      const media = mediaByKey.get(key);
+      if (media) return media;
+    }
   }
   return null;
 }
@@ -372,7 +385,9 @@ async function hydrateLessonsContent(lessons = []) {
   )];
 
   const mediaKeys = [...new Set(
-    lessons.flatMap(lesson => lessonScreens(lesson).flatMap(collectScreenAutoMediaKeys))
+    lessons.flatMap(lesson => lessonScreens(lesson)
+      .flatMap(collectScreenAutoMediaKeys)
+      .flatMap(mediaLookupKeys))
   )];
 
   const [audioEntries, mediaEntries] = await Promise.all([
@@ -434,6 +449,7 @@ async function hydrateLessonsContent(lessons = []) {
             screen?.mediaKey,
             screen?.scene,
             screen?.phrase,
+            screen?.title,
             screen?.imageKey,
           ]);
           if (automaticMedia) {
