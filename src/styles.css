@@ -3955,3 +3955,66 @@ body.lesson-scroll-locked{
   }
   .spec-pair-row>span{display:none}
 }
+
+
+.spec-multiselect button.selected{
+  outline:2px solid rgba(20,130,117,.2);
+}
+.voice-practice-recorder{
+  margin-top:14px;
+  display:flex;
+  align-items:center;
+  gap:9px;
+  flex-wrap:wrap;
+}
+.voice-practice-recorder>button{
+  min-height:42px;
+  border:0;
+  border-radius:11px;
+  padding:0 13px;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  background:#153f48;
+  color:#fff;
+  font-weight:800;
+  cursor:pointer;
+}
+.voice-practice-recorder>button.recording{
+  background:#b95c50;
+}
+.voice-practice-recorder>button.voice-practice-skip{
+  min-height:38px;
+  border:1px solid #d4e2de;
+  background:#f7faf9;
+  color:#527078;
+  font-size:11px;
+}
+.voice-practice-recorder.done>button.voice-practice-skip{
+  border-color:#b7dfd2;
+  background:#edf9f5;
+  color:#0c7f73;
+}
+.voice-practice-recorder audio{
+  width:min(310px,100%);
+  height:38px;
+}
+.voice-practice-recorder small{
+  width:100%;
+  color:#a45b50;
+  font-size:10px;
+  line-height:1.4;
+}
+.voice-practice-recorder.compact{
+  margin-top:0;
+  justify-content:flex-end;
+}
+.voice-practice-recorder.compact>button{
+  min-height:36px;
+  padding:0 10px;
+  font-size:10px;
+}
+.voice-practice-recorder.compact audio{
+  width:190px;
+  height:34px;
+}
