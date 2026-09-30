@@ -482,12 +482,31 @@ const uiAudioLoads = new Map();
 
 function getUiAudioContext() {
   if (typeof window === 'undefined') return null;
+
+  if (uiAudioContext?.state === 'closed') {
+    uiAudioContext = null;
+    uiAudioBuffers.clear();
+    uiAudioLoads.clear();
+  }
+
   if (!uiAudioContext) {
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextCtor) return null;
     uiAudioContext = new AudioContextCtor({ latencyHint: 'interactive' });
   }
+
   return uiAudioContext;
+}
+
+async function resumeUiAudio() {
+  const context = getUiAudioContext();
+  if (!context) return null;
+
+  if (context.state !== 'running') {
+    try { await context.resume(); } catch {}
+  }
+
+  return context;
 }
 
 async function loadUiSound(name) {
@@ -514,23 +533,23 @@ async function loadUiSound(name) {
 
 async function playUiSound(name) {
   const config = UI_SOUNDS[name];
-  const context = getUiAudioContext();
-  if (!config || !context) return;
+  if (!config) return;
 
-  if (context.state === 'suspended') {
-    try { await context.resume(); } catch {}
-  }
+  const context = await resumeUiAudio();
+  if (!context || context.state !== 'running') return;
 
   const buffer = uiAudioBuffers.get(name) || await loadUiSound(name);
   if (!buffer) return;
 
-  const source = context.createBufferSource();
-  const gain = context.createGain();
-  source.buffer = buffer;
-  gain.gain.value = config.volume;
-  source.connect(gain);
-  gain.connect(context.destination);
-  source.start(0);
+  try {
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    gain.gain.value = config.volume;
+    source.connect(gain);
+    gain.connect(context.destination);
+    source.start(0);
+  } catch {}
 }
 
 function preloadUiSounds() {
@@ -540,9 +559,28 @@ function preloadUiSounds() {
 }
 
 function unlockUiAudio() {
-  const context = getUiAudioContext();
-  if (!context || context.state !== 'suspended') return;
-  void context.resume();
+  void resumeUiAudio();
+}
+
+function installUiAudioLifecycle() {
+  if (typeof window === 'undefined' || typeof document === 'undefined' || window.__skladnoAudioLifecycleInstalled) return;
+  window.__skladnoAudioLifecycleInstalled = true;
+
+  const restore = () => {
+    if (document.visibilityState === 'visible') {
+      void resumeUiAudio().then(context => {
+        if (context?.state === 'running') {
+          Object.keys(UI_SOUNDS).forEach(name => { void loadUiSound(name); });
+        }
+      });
+    }
+  };
+
+  document.addEventListener('visibilitychange', restore);
+  window.addEventListener('focus', restore);
+  window.addEventListener('pageshow', restore);
+  document.addEventListener('pointerdown', restore, { capture: true, passive: true });
+  document.addEventListener('keydown', restore, { capture: true });
 }
 
 function installGlobalClickSound() {
@@ -1591,5 +1629,6 @@ function App() {
 
 const isAdminRoute = window.location.pathname === '/admin' || window.location.pathname.startsWith('/admin/');
 preloadUiSounds();
+installUiAudioLifecycle();
 installGlobalClickSound();
 createRoot(document.getElementById('root')).render(isAdminRoute ? <AdminApp /> : <App />);
