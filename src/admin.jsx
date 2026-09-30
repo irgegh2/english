@@ -971,7 +971,7 @@ function StorageSettingsPanel({ settings, setSettings, loading, onReload, onSave
   const [draft, setDraft] = useState(settings || {});
   const [secretAccessKey, setSecretAccessKey] = useState('');
   const [testing, setTesting] = useState(false);
-  const [migrating, setMigrating] = useState(false);
+  const [verifyingCloudOnly, setVerifyingCloudOnly] = useState(false);
 
   useEffect(() => {
     setDraft(settings || {});
@@ -1019,23 +1019,19 @@ function StorageSettingsPanel({ settings, setSettings, loading, onReload, onSave
     }
   };
 
-  const migrateLocalUploads = async () => {
-    if (!window.confirm('Перенести все найденные локальные /uploads-файлы в REG.RU S3 и заменить ссылки в базе? Локальные копии останутся на месте.')) return;
-    const saved = await save();
-    if (!saved) return;
-
-    setMigrating(true);
-    onSaveState('saving');
+  const verifyCloudOnly = async () => {
+    setVerifyingCloudOnly(true);
     try {
-      const result = await api('/api/admin/storage-settings/migrate-local-uploads', { method: 'POST' });
-      onSaveState('saved');
-      window.alert(`Готово. Перенесено уникальных файлов: ${result.migrated || 0}.`);
-      await onReload();
+      const result = await api('/api/admin/storage-settings/cloud-only-status');
+      if (result.ok) {
+        window.alert('Проверка пройдена: в облачной базе нет ссылок на локальные /uploads.');
+      } else {
+        window.alert(`Найдены локальные ссылки: ${result.localReferenceCount}. Локальную очистку пока выполнять нельзя.`);
+      }
     } catch (error) {
-      onSaveState('error');
       window.alert(error.message);
     } finally {
-      setMigrating(false);
+      setVerifyingCloudOnly(false);
     }
   };
 
@@ -1110,14 +1106,14 @@ function StorageSettingsPanel({ settings, setSettings, loading, onReload, onSave
 
       <section className="admin-editor-section">
         <div className="admin-editor-title">
-          <div><strong>Перенос старых локальных файлов</strong><span>Для файлов, которые раньше лежали в public/uploads</span></div>
+          <div><strong>Облачный режим</strong><span>Локальные пользовательские /uploads полностью отключены</span></div>
         </div>
         <p className="admin-storage-explain">
-          После настройки S3 можно один раз перенести старые загруженные картинки и аудио. Сервер загрузит их в S3 и автоматически заменит ссылки в голосах, аудиословаре, медиатеке и заданиях.
+          Сервер больше не раздаёт и не создаёт public/uploads. Новые пользовательские картинки, аудио и файлы загружаются только в REG.RU S3.
         </p>
-        <button className="admin-storage-migrate" onClick={migrateLocalUploads} disabled={migrating || !draft.hasSecretAccessKey}>
-          {migrating ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
-          {migrating ? 'Переносим…' : 'Перенести локальные файлы в S3'}
+        <button className="admin-storage-migrate" onClick={verifyCloudOnly} disabled={verifyingCloudOnly}>
+          {verifyingCloudOnly ? <Loader2 size={16} className="spin" /> : <Check size={16} />}
+          {verifyingCloudOnly ? 'Проверяем…' : 'Проверить отсутствие локальных ссылок'}
         </button>
       </section>
 
