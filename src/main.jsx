@@ -359,7 +359,7 @@ function LearningBreadcrumbs({ moduleData, block, onModules, onModule }) {
   );
 }
 
-function ModulesPage({ modules, loading, currentModulePosition, onOpenModule }) {
+function ModulesPage({ modules, loading, error, currentModulePosition, onOpenModule, onRetry }) {
   return (
     <main className="main-content learning-page modules-page">
       <section className="learning-head">
@@ -369,7 +369,7 @@ function ModulesPage({ modules, loading, currentModulePosition, onOpenModule }) 
           <p>35 модулей курса. Внутри каждого модуля находятся тематические блоки, которые постепенно наполняются уроками.</p>
         </div>
         <div className="course-summary">
-          <strong>{modules.length || 35}</strong>
+          <strong>{modules.length}</strong>
           <span>модулей</span>
           <i />
           <strong>{modules.reduce((sum, item) => sum + (item.blockCount || 0), 0)}</strong>
@@ -379,6 +379,12 @@ function ModulesPage({ modules, loading, currentModulePosition, onOpenModule }) 
 
       {loading ? (
         <div className="course-loading">Загружаем структуру курса из базы…</div>
+      ) : error ? (
+        <div className="course-load-error">
+          <strong>Модули не пропали из интерфейса — сейчас не отвечает источник данных.</strong>
+          <span>{error}</span>
+          <button onClick={onRetry}><RotateCcw size={15} /> Загрузить ещё раз</button>
+        </div>
       ) : (
         <section className="module-list">
           {modules.map(moduleData => (
@@ -1194,6 +1200,7 @@ function App() {
   const [selectedBlock, setSelectedBlock] = useState(null);
   const [selectedLesson, setSelectedLesson] = useState(null);
   const [courseLoading, setCourseLoading] = useState(true);
+  const [courseError, setCourseError] = useState('');
   const [blocksLoading, setBlocksLoading] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const [lessonLoading, setLessonLoading] = useState(false);
@@ -1209,20 +1216,46 @@ function App() {
   const switchTimer = useRef(null);
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/dashboard').then(r => r.ok ? r.json() : Promise.reject()),
-      fetch('/api/course/modules').then(r => r.ok ? r.json() : Promise.reject()),
-      fetch('/api/voices').then(r => r.ok ? r.json() : VOICE_PRESETS).catch(() => VOICE_PRESETS),
-    ])
-      .then(([dashboardData, modulesData, voicesData]) => {
+    let active = true;
+
+    const loadInitialData = async () => {
+      setCourseLoading(true);
+      setCourseError('');
+
+      const [dashboardResult, modulesResult, voicesResult] = await Promise.allSettled([
+        fetch('/api/dashboard').then(response => response.ok ? response.json() : Promise.reject(new Error('dashboard'))),
+        fetch('/api/course/modules').then(response => response.ok ? response.json() : Promise.reject(new Error('modules'))),
+        fetch('/api/voices').then(response => response.ok ? response.json() : Promise.reject(new Error('voices'))),
+      ]);
+
+      if (!active) return;
+
+      if (dashboardResult.status === 'fulfilled') {
+        const dashboardData = dashboardResult.value;
         setDashboard(dashboardData);
         setProfile(dashboardData.profile);
         setVoicePreset(dashboardData.profile.voicePreset || 'ella');
-        setModules(modulesData);
-        if (Array.isArray(voicesData) && voicesData.length) setVoiceOptions(voicesData);
-      })
-      .catch(() => {})
-      .finally(() => setCourseLoading(false));
+      }
+
+      if (modulesResult.status === 'fulfilled') {
+        const modulesData = modulesResult.value;
+        setModules(Array.isArray(modulesData) ? modulesData : []);
+        if (!Array.isArray(modulesData) || modulesData.length === 0) {
+          setCourseError('Структура курса в базе сейчас пустая.');
+        }
+      } else {
+        setCourseError('Не удалось загрузить модули из API.');
+      }
+
+      if (voicesResult.status === 'fulfilled' && Array.isArray(voicesResult.value) && voicesResult.value.length) {
+        setVoiceOptions(voicesResult.value);
+      }
+
+      setCourseLoading(false);
+    };
+
+    void loadInitialData();
+    return () => { active = false; };
   }, []);
 
   useEffect(() => () => {
@@ -1438,8 +1471,10 @@ function App() {
       <ModulesPage
         modules={modules}
         loading={courseLoading}
+        error={courseError}
         currentModulePosition={dashboard?.profile?.currentModulePosition}
         onOpenModule={openModule}
+        onRetry={() => window.location.reload()}
       />
     );
   };
