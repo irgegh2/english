@@ -30,6 +30,11 @@ const TASK_TYPES = [
 
 const deepClone = value => JSON.parse(JSON.stringify(value ?? null));
 const clamp = value => Math.max(0, Math.min(100, Number(value || 0)));
+const normalizeAudioPhrase = value => String(value || '')
+  .normalize('NFKC')
+  .trim()
+  .toLocaleLowerCase('en-US')
+  .replace(/\s+/g, ' ');
 
 const api = async (url, options = {}) => {
   const response = await fetch(url, {
@@ -45,7 +50,7 @@ const api = async (url, options = {}) => {
 
 const createScreen = (type = 'choice') => {
   const id = Date.now() + Math.floor(Math.random() * 1000);
-  const base = { id, type, eyebrow: 'Задание', title: '', audioFiles: {}, imageUrl: '' };
+  const base = { id, type, eyebrow: 'Задание', title: '', audioPhrase: '', audioFiles: {}, imageUrl: '' };
 
   if (type === 'intro') return { ...base, body: '', chips: [] };
   if (type === 'flashcard') return { ...base, phrase: '', translation: '', scene: 'meeting', sceneText: '', reply: '', replyTranslation: '', note: '' };
@@ -164,24 +169,70 @@ function MediaUploader({ kind, value, onChange, label }) {
   );
 }
 
-function AudioMatrix({ screen, onChange }) {
-  const audioFiles = screen.audioFiles || {};
+function AudioPhraseField({ screen, onChange, audioDictionary = [] }) {
+  const audioPhrase = screen.audioPhrase || '';
+  const key = normalizeAudioPhrase(audioPhrase);
+  const match = key
+    ? audioDictionary.find(entry => entry.key === key || normalizeAudioPhrase(entry.text) === key)
+    : null;
+  const dictionaryFiles = match?.audioFiles || {};
+  const audioCount = VOICES.filter(([id]) => dictionaryFiles[id]).length;
+  const legacyCount = VOICES.filter(([id]) => screen.audioFiles?.[id]).length;
+  const state = !audioPhrase.trim() ? 'empty' : audioCount > 0 ? 'ready' : 'missing';
+
   return (
-    <section className="admin-media-section">
+    <section className="admin-media-section admin-audio-reference-section">
       <div className="admin-section-minihead">
-        <div><Volume2 size={18} /><strong>Озвучка задания</strong></div>
-        <span>6 отдельных файлов — по одному на каждый голос</span>
+        <div><Volume2 size={18} /><strong>Озвучка из аудиословаря</strong></div>
+        <span>одна фраза переиспользуется во всех уроках</span>
       </div>
-      <div className="admin-audio-grid">
-        {VOICES.map(([id, name, gender]) => (
-          <MediaUploader
-            key={id}
-            kind="audio"
-            label={`${name} · ${gender}`}
-            value={audioFiles[id] || ''}
-            onChange={url => onChange({ ...screen, audioFiles: { ...audioFiles, [id]: url } })}
+
+      <div className={`admin-audio-reference ${state}`}>
+        <Field
+          label="Слово или фраза для озвучки"
+          wide
+          hint="Регистр и лишние пробелы не важны. Пунктуация считается частью фразы."
+        >
+          <TextInput
+            value={audioPhrase}
+            placeholder="Например: Hello"
+            onChange={value => onChange({ ...screen, audioPhrase: value })}
           />
-        ))}
+        </Field>
+
+        <div className="admin-audio-reference-status">
+          {!audioPhrase.trim() ? (
+            <><span className="dot" /> Укажи фразу, которую нужно озвучивать.</>
+          ) : audioCount > 0 ? (
+            <><Check size={16} /> Озвучка найдена · {audioCount} из {VOICES.length} голосов</>
+          ) : match ? (
+            <><span className="dot" /> Фраза есть в словаре, но аудио ещё не загружено.</>
+          ) : (
+            <><span className="dot" /> Такой фразы пока нет в аудиословаре.</>
+          )}
+        </div>
+
+        {match && (
+          <div className="admin-audio-voice-statuses">
+            {VOICES.map(([id, name]) => (
+              <span key={id} className={dictionaryFiles[id] ? 'ready' : ''}>
+                {dictionaryFiles[id] ? <Check size={12} /> : <span>×</span>} {name}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {audioPhrase.trim() && audioCount === 0 && (
+          <p className="admin-audio-reference-help">
+            Добавь эту фразу в разделе «Аудиословарь» и загрузи хотя бы один голос — после этого урок подхватит запись автоматически.
+          </p>
+        )}
+
+        {legacyCount > 0 && (
+          <p className="admin-audio-legacy-note">
+            У этого задания сохранено старое аудио ({legacyCount}/{VOICES.length}). Оно продолжит работать как резервный вариант.
+          </p>
+        )}
       </div>
     </section>
   );
@@ -262,7 +313,7 @@ function SpeakingItemsEditor({ items = [], onChange }) {
   );
 }
 
-function ScreenFields({ screen, onChange }) {
+function ScreenFields({ screen, onChange, audioDictionary }) {
   const set = (key, value) => onChange({ ...screen, [key]: value });
 
   return (
@@ -273,6 +324,7 @@ function ScreenFields({ screen, onChange }) {
           onChange({
             ...next,
             id: screen.id,
+            audioPhrase: screen.audioPhrase || '',
             audioFiles: screen.audioFiles || {},
             imageUrl: screen.imageUrl || '',
             eyebrow: screen.eyebrow || next.eyebrow,
@@ -338,12 +390,12 @@ function ScreenFields({ screen, onChange }) {
         <MediaUploader kind="image" label="Фото 1:1" value={screen.imageUrl || ''} onChange={url => set('imageUrl', url)} />
       </section>
 
-      <AudioMatrix screen={screen} onChange={onChange} />
+      <AudioPhraseField screen={screen} onChange={onChange} audioDictionary={audioDictionary} />
     </div>
   );
 }
 
-function LessonContentEditor({ draft, setDraft }) {
+function LessonContentEditor({ draft, setDraft, audioDictionary }) {
   const content = draft.content || { version: 1, outcomes: [], screens: [] };
   const screens = content.screens || [];
   const [newType, setNewType] = useState('choice');
@@ -407,7 +459,7 @@ function LessonContentEditor({ draft, setDraft }) {
                 }} title="Удалить"><Trash2 size={16} /></button>
               </div>
             </summary>
-            <ScreenFields screen={screen} onChange={next => updateScreen(index, next)} />
+            <ScreenFields screen={screen} onChange={next => updateScreen(index, next)} audioDictionary={audioDictionary} />
           </details>
         ))}
         {!screens.length && <div className="admin-empty">В уроке пока нет заданий. Выбери тип и добавь первый экран.</div>}
@@ -421,6 +473,181 @@ function SaveStatus({ state }) {
   if (state === 'error') return <span className="admin-save-state error">Ошибка автосохранения</span>;
   if (state === 'dirty') return <span className="admin-save-state dirty">Есть изменения…</span>;
   return <span className="admin-save-state saved"><Check size={15} /> Всё сохранено</span>;
+}
+
+function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveState }) {
+  const [newPhrase, setNewPhrase] = useState('');
+  const [filter, setFilter] = useState('');
+  const textTimers = useRef({});
+
+  useEffect(() => () => {
+    Object.values(textTimers.current).forEach(timer => window.clearTimeout(timer));
+  }, []);
+
+  const filteredEntries = useMemo(() => {
+    const query = normalizeAudioPhrase(filter);
+    if (!query) return entries;
+    return entries.filter(entry => normalizeAudioPhrase(entry.text).includes(query));
+  }, [entries, filter]);
+
+  const createEntry = async () => {
+    const text = newPhrase.trim();
+    if (!text) return;
+
+    onSaveState('saving');
+    try {
+      const created = await api('/api/admin/audio-dictionary', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      });
+      setEntries(list => [...list, created].sort((a, b) => a.text.localeCompare(b.text, 'en')));
+      setNewPhrase('');
+      onSaveState('saved');
+    } catch (error) {
+      onSaveState('error');
+      window.alert(error.message);
+    }
+  };
+
+  const scheduleTextSave = (id, text) => {
+    setEntries(list => list.map(entry => entry.id === id ? { ...entry, text } : entry));
+    window.clearTimeout(textTimers.current[id]);
+    onSaveState('dirty');
+
+    textTimers.current[id] = window.setTimeout(async () => {
+      onSaveState('saving');
+      try {
+        const updated = await api(`/api/admin/audio-dictionary/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ text }),
+        });
+        setEntries(list => list.map(entry => entry.id === id ? updated : entry));
+        onSaveState('saved');
+      } catch (error) {
+        onSaveState('error');
+        window.alert(error.message);
+        await onReload();
+      }
+    }, 700);
+  };
+
+  const updateAudio = async (entry, voiceId, url) => {
+    const previous = entry;
+    const audioFiles = { ...(entry.audioFiles || {}) };
+    if (url) audioFiles[voiceId] = url;
+    else delete audioFiles[voiceId];
+
+    setEntries(list => list.map(item => item.id === entry.id ? { ...item, audioFiles } : item));
+    onSaveState('saving');
+
+    try {
+      const updated = await api(`/api/admin/audio-dictionary/${entry.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ audioFiles }),
+      });
+      setEntries(list => list.map(item => item.id === entry.id ? updated : item));
+      onSaveState('saved');
+    } catch (error) {
+      setEntries(list => list.map(item => item.id === entry.id ? previous : item));
+      onSaveState('error');
+      window.alert(error.message);
+    }
+  };
+
+  const deleteEntry = async entry => {
+    if (!window.confirm(`Удалить фразу «${entry.text}» из аудиословаря?`)) return;
+
+    onSaveState('saving');
+    try {
+      await api(`/api/admin/audio-dictionary/${entry.id}`, { method: 'DELETE' });
+      setEntries(list => list.filter(item => item.id !== entry.id));
+      onSaveState('saved');
+    } catch (error) {
+      onSaveState('error');
+      window.alert(error.message);
+    }
+  };
+
+  if (loading) {
+    return <div className="admin-loading"><Loader2 className="spin" /> Загружаем аудиословарь…</div>;
+  }
+
+  return (
+    <div className="admin-audio-dictionary-page">
+      <div className="admin-editor-head">
+        <div className="admin-editor-heading">
+          <div className="admin-editor-path">Общая медиатека озвучки</div>
+          <h1>Аудиословарь</h1>
+          <p>Одна английская фраза хранится один раз и может использоваться в любом количестве уроков. Все изменения сохраняются автоматически.</p>
+        </div>
+      </div>
+
+      <section className="admin-audio-dict-add">
+        <div>
+          <strong>Новая фраза</strong>
+          <span>Сначала добавь текст, затем загрузи нужные голоса.</span>
+        </div>
+        <div className="admin-audio-dict-add-controls">
+          <input
+            value={newPhrase}
+            placeholder="Например: Hello"
+            onChange={event => setNewPhrase(event.target.value)}
+            onKeyDown={event => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                void createEntry();
+              }
+            }}
+          />
+          <button onClick={createEntry} disabled={!newPhrase.trim()}><Plus size={16} /> Добавить фразу</button>
+        </div>
+      </section>
+
+      <div className="admin-audio-dict-toolbar">
+        <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Фильтр по фразам…" />
+        <span>{filteredEntries.length} из {entries.length}</span>
+      </div>
+
+      <div className="admin-audio-dict-list">
+        {filteredEntries.map(entry => {
+          const readyCount = VOICES.filter(([id]) => entry.audioFiles?.[id]).length;
+          return (
+            <article className="admin-audio-dict-card" key={entry.id}>
+              <div className="admin-audio-dict-card-head">
+                <div className="admin-audio-dict-phrase">
+                  <span>Фраза</span>
+                  <input
+                    value={entry.text}
+                    onChange={event => scheduleTextSave(entry.id, event.target.value)}
+                  />
+                </div>
+                <span className={`admin-audio-dict-state ${readyCount ? 'ready' : 'missing'}`}>
+                  {readyCount ? <><Check size={14} /> {readyCount}/{VOICES.length} голосов</> : 'Нет аудио'}
+                </span>
+                <button className="admin-audio-dict-delete" onClick={() => deleteEntry(entry)} title="Удалить фразу"><Trash2 size={16} /></button>
+              </div>
+
+              <div className="admin-audio-grid">
+                {VOICES.map(([id, name, gender]) => (
+                  <MediaUploader
+                    key={id}
+                    kind="audio"
+                    label={`${name} · ${gender}`}
+                    value={entry.audioFiles?.[id] || ''}
+                    onChange={url => updateAudio(entry, id, url)}
+                  />
+                ))}
+              </div>
+            </article>
+          );
+        })}
+
+        {!filteredEntries.length && (
+          <div className="admin-empty">{entries.length ? 'По этому фильтру ничего не найдено.' : 'Аудиословарь пока пуст. Добавь первую фразу выше.'}</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function VoiceAdminPanel({ voices, setVoices, loading, onSaveState }) {
@@ -518,6 +745,8 @@ function AdminApp() {
   const [tree, setTree] = useState([]);
   const [voices, setVoices] = useState([]);
   const [voicesLoading, setVoicesLoading] = useState(true);
+  const [audioDictionary, setAudioDictionary] = useState([]);
+  const [audioDictionaryLoading, setAudioDictionaryLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState('saved');
   const [selectedModuleId, setSelectedModuleId] = useState(null);
@@ -564,9 +793,24 @@ function AdminApp() {
     }
   };
 
+  const loadAudioDictionary = async () => {
+    setAudioDictionaryLoading(true);
+    try {
+      const data = await api('/api/admin/audio-dictionary');
+      setAudioDictionary(data);
+      return data;
+    } catch (error) {
+      window.alert(error.message);
+      return [];
+    } finally {
+      setAudioDictionaryLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadTree();
     void loadVoices();
+    void loadAudioDictionary();
   }, []);
 
   useEffect(() => {
@@ -813,7 +1057,10 @@ function AdminApp() {
         </div>
         <div className="admin-top-actions">
           <SaveStatus state={saveState} />
-          <button onClick={() => adminSection === 'voices' ? loadVoices() : loadTree()} disabled={loading || voicesLoading}><RefreshCw size={16} className={(loading || voicesLoading) ? 'spin' : ''} /> Обновить данные</button>
+          <button
+            onClick={() => adminSection === 'voices' ? loadVoices() : adminSection === 'audioDictionary' ? loadAudioDictionary() : loadTree()}
+            disabled={loading || voicesLoading || audioDictionaryLoading}
+          ><RefreshCw size={16} className={(loading || voicesLoading || audioDictionaryLoading) ? 'spin' : ''} /> Обновить данные</button>
           <a href="/">Открыть сайт</a>
         </div>
       </header>
@@ -832,6 +1079,12 @@ function AdminApp() {
             onClick={() => { setAdminSection('voices'); setBrowserOpen(false); }}
           >
             <Volume2 size={19} /><span><strong>Голоса</strong><small>6 демо-записей</small></span>
+          </button>
+          <button
+            className={adminSection === 'audioDictionary' ? 'active' : ''}
+            onClick={() => { setAdminSection('audioDictionary'); setBrowserOpen(false); }}
+          >
+            <FileAudio size={19} /><span><strong>Аудиословарь</strong><small>{audioDictionary.length} фраз</small></span>
           </button>
           <button disabled><Users size={19} /><span><strong>Пользователи</strong><small>скоро</small></span></button>
           <button disabled><Image size={19} /><span><strong>Медиатека</strong><small>скоро</small></span></button>
@@ -861,6 +1114,14 @@ function AdminApp() {
         <main className="admin-editor">
           {adminSection === 'voices' ? (
             <VoiceAdminPanel voices={voices} setVoices={setVoices} loading={voicesLoading} onSaveState={setSaveState} />
+          ) : adminSection === 'audioDictionary' ? (
+            <AudioDictionaryPanel
+              entries={audioDictionary}
+              setEntries={setAudioDictionary}
+              loading={audioDictionaryLoading}
+              onReload={loadAudioDictionary}
+              onSaveState={setSaveState}
+            />
           ) : loading ? (
             <div className="admin-loading"><Loader2 className="spin" /> Загружаем курс…</div>
           ) : lessonDraft ? (
@@ -869,7 +1130,7 @@ function AdminApp() {
                 <div className="admin-editor-heading">
                   <div className="admin-editor-path">{crumbs.join(' / ')}</div>
                   <h1>{lessonDraft.title || 'Без названия'}</h1>
-                  <p>Редактируй урок, задания, изображения и шесть вариантов озвучки. Сохранение происходит автоматически.</p>
+                  <p>Редактируй урок и задания. Для озвучки укажи фразу из общего аудиословаря — сохранение происходит автоматически.</p>
                 </div>
                 <div className="admin-editor-actions">
                   <button className="structure" onClick={() => { setBrowserOpen(true); setBrowserLevel('lessons'); }}><PanelLeftOpen size={17} /> Структура курса</button>
@@ -892,7 +1153,7 @@ function AdminApp() {
                 </div>
               </section>
 
-              <LessonContentEditor draft={lessonDraft} setDraft={setLessonDraft} />
+              <LessonContentEditor draft={lessonDraft} setDraft={setLessonDraft} audioDictionary={audioDictionary} />
             </>
           ) : blockDraft ? (
             <>
