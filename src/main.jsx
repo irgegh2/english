@@ -533,13 +533,13 @@ async function loadUiSound(name) {
 
 async function playUiSound(name) {
   const config = UI_SOUNDS[name];
-  if (!config) return;
+  if (!config) return false;
 
   const context = await resumeUiAudio();
-  if (!context || context.state !== 'running') return;
+  if (!context || context.state !== 'running') return false;
 
   const buffer = uiAudioBuffers.get(name) || await loadUiSound(name);
-  if (!buffer) return;
+  if (!buffer) return false;
 
   try {
     const source = context.createBufferSource();
@@ -549,6 +549,21 @@ async function playUiSound(name) {
     source.connect(gain);
     gain.connect(context.destination);
     source.start(0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function playUiSoundFallback(name) {
+  const config = UI_SOUNDS[name];
+  if (!config || typeof window === 'undefined') return;
+
+  try {
+    const audio = new Audio(config.url);
+    audio.preload = 'auto';
+    audio.volume = config.volume;
+    void audio.play();
   } catch {}
 }
 
@@ -795,18 +810,6 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   }, [step]);
 
   useEffect(() => {
-    if (!finished) {
-      completionSoundPlayedRef.current = false;
-      return;
-    }
-
-    if (!completionSoundPlayedRef.current) {
-      completionSoundPlayedRef.current = true;
-      void playUiSound('end');
-    }
-  }, [finished]);
-
-  useEffect(() => {
     const syncFullscreen = () => {
       const active = document.fullscreenElement || document.webkitFullscreenElement;
       setIsFullscreen(active === lessonRunnerRef.current);
@@ -880,6 +883,10 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     const progress = Math.round(((step + 1) / screens.length) * 100);
     onProgress(progress);
     if (step >= screens.length - 1) {
+      completionSoundPlayedRef.current = true;
+      void playUiSound('end').then(started => {
+        if (!started) playUiSoundFallback('end');
+      });
       setFinished(true);
       return;
     }
@@ -922,14 +929,23 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   if (finished) {
     return (
       <section className="lesson-runner lesson-finished" ref={lessonRunnerRef}>
-        <div className="lesson-finish-icon"><Check size={34} /></div>
-        <span className="lesson-eyebrow">Урок завершён</span>
-        <h1>Hello! — готово</h1>
-        <p>{screen.finishText || 'Ты прошёл первый интерактивный урок.'}</p>
-        <div className="lesson-outcomes">
-          {(lesson.content?.outcomes || []).slice(0, 5).map(item => <div key={item}><Check size={15} />{item}</div>)}
+        <div className="lesson-finish-burst" aria-hidden="true">
+          {Array.from({ length: 12 }).map((_, index) => <i key={index} style={{ '--burst-index': index }} />)}
         </div>
-        <button className="lesson-primary-action" onClick={exitLesson}>Вернуться к урокам <ArrowRight size={17} /></button>
+        <div className="lesson-finish-content">
+          <div className="lesson-finish-icon"><Check size={38} /></div>
+          <span className="lesson-eyebrow">Урок завершён</span>
+          <h1>{lesson.title} — готово</h1>
+          <p>{screen.finishText || 'Ты прошёл первый интерактивный урок.'}</p>
+          <div className="lesson-outcomes">
+            {(lesson.content?.outcomes || []).slice(0, 5).map((item, index) => (
+              <div key={item} style={{ '--outcome-index': index }}><Check size={15} />{item}</div>
+            ))}
+          </div>
+          <button className="lesson-primary-action lesson-finish-action" onClick={exitLesson}>
+            Вернуться к урокам <ArrowRight size={17} />
+          </button>
+        </div>
       </section>
     );
   }
