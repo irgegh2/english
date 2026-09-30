@@ -1024,6 +1024,86 @@ function MultiSelectOptions({ options, answers = [], selected = [], onSelect, co
   );
 }
 
+function VoicePracticeRecorder({ done = false, onDone, compact = false }) {
+  const [recording, setRecording] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [error, setError] = useState('');
+  const recorderRef = useRef(null);
+  const streamRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    streamRef.current?.getTracks?.().forEach(track => track.stop());
+  }, [previewUrl]);
+
+  const stop = () => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+  };
+
+  const start = async () => {
+    setError('');
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError('Запись голоса недоступна в этом браузере. Можно отметить фразу как произнесённую.');
+      return;
+    }
+
+    try {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+        setPreviewUrl('');
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      chunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      recorderRef.current = mediaRecorder;
+
+      mediaRecorder.addEventListener('dataavailable', event => {
+        if (event.data?.size) chunksRef.current.push(event.data);
+      });
+      mediaRecorder.addEventListener('stop', () => {
+        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType || 'audio/webm' });
+        if (blob.size) setPreviewUrl(URL.createObjectURL(blob));
+        stream.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+        setRecording(false);
+        onDone?.();
+      }, { once: true });
+
+      mediaRecorder.start();
+      setRecording(true);
+    } catch (err) {
+      setRecording(false);
+      setError(err?.name === 'NotAllowedError'
+        ? 'Нет доступа к микрофону. Разреши микрофон браузеру или отметь выполнение вручную.'
+        : 'Не удалось начать запись голоса.');
+    }
+  };
+
+  return (
+    <div className={`voice-practice-recorder ${compact ? 'compact' : ''} ${done ? 'done' : ''}`}>
+      <button
+        type="button"
+        className={recording ? 'recording' : ''}
+        onClick={recording ? stop : start}
+        data-ui-click="off"
+      >
+        {recording ? <AudioLines size={18} /> : <Mic2 size={18} />}
+        {recording ? 'Остановить запись' : previewUrl ? 'Записать ещё раз' : 'Записать голос'}
+      </button>
+      {previewUrl && <audio controls src={previewUrl} preload="metadata" />}
+      {!recording && !previewUrl && (
+        <button type="button" className="voice-practice-skip" onClick={() => onDone?.()}>
+          {done ? <><Check size={15} /> Выполнено</> : 'Я произнёс вслух'}
+        </button>
+      )}
+      {error && <small>{error}</small>}
+    </div>
+  );
+}
+
 function SpecTaskScreen({
   screen,
   voicePreset,
@@ -1176,9 +1256,10 @@ function SpecTaskScreen({
         <h1>{screen.title}</h1>
         <LessonAudioSequenceButton urls={audioUrls} label="Послушать образец" />
         {renderLines(screen.lead || [])}
-        <button className={`spec-speaking-button ${spoken[0] ? 'done' : ''}`} onClick={() => setSpoken(prev => ({ ...prev, 0: true }))}>
-          <Mic2 size={19} /> {spoken[0] ? 'Сказано' : 'Сказать вслух'} {spoken[0] && <Check size={16} />}
-        </button>
+        <VoicePracticeRecorder
+          done={Boolean(spoken[0])}
+          onDone={() => setSpoken(prev => ({ ...prev, 0: true }))}
+        />
         {spoken[0] && screen.expected?.length > 0 && (
           <div className="spec-expected">
             <span>Возможный вариант</span>
@@ -1662,7 +1743,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             {screen.phrases.map((phrase, index) => (
               <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
                 <strong>{phrase}</strong>
-                <button onClick={() => setRepeated(prev => ({ ...prev, [index]: true }))}><Mic2 size={18} /> Повторил{repeated[index] && <Check size={15} />}</button>
+                <VoicePracticeRecorder
+                  compact
+                  done={Boolean(repeated[index])}
+                  onDone={() => setRepeated(prev => ({ ...prev, [index]: true }))}
+                />
               </div>
             ))}
           </div>
@@ -1685,7 +1770,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
                   <strong>{item.prompt}</strong>
                   {spoken[index] && <p>{item.answers.join(' / ')}</p>}
                 </div>
-                <button onClick={() => setSpoken(prev => ({ ...prev, [index]: true }))}><Mic2 size={17} /> {spoken[index] ? 'Готово' : 'Сказал вслух'}</button>
+                <VoicePracticeRecorder
+                  compact
+                  done={Boolean(spoken[index])}
+                  onDone={() => setSpoken(prev => ({ ...prev, [index]: true }))}
+                />
               </div>
             ))}
           </div>
