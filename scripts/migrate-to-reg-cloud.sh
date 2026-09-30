@@ -29,17 +29,7 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-SOURCE_DATABASE_URL="$(node - <<'NODE'
-const fs = require('fs');
-const text = fs.readFileSync('.env', 'utf8');
-const match = text.match(/^DATABASE_URL\s*=\s*(.+)$/m);
-if (!match) process.exit(2);
-const value = match[1].trim().replace(/^["']|["']$/g, '');
-const url = new URL(value);
-url.searchParams.delete('schema');
-process.stdout.write(url.toString());
-NODE
-)"
+SOURCE_DATABASE_URL="$(node scripts/reg-cloud-env.mjs source-url)"
 
 if [[ "$SOURCE_DATABASE_URL" == *"79.174.89.45:19538"* ]]; then
   echo "DATABASE_URL уже указывает на REG.RU (79.174.89.45:19538). Перенос повторно не запускаю."
@@ -62,7 +52,7 @@ if [ -z "$REG_DB_PASSWORD" ]; then
   exit 1
 fi
 
-ENCODED_PASSWORD="$(node -e "process.stdout.write(encodeURIComponent(process.argv[1]))" "$REG_DB_PASSWORD")"
+ENCODED_PASSWORD="$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$REG_DB_PASSWORD")"
 TARGET_BASE_URL="postgresql://${REG_DB_USER}:${ENCODED_PASSWORD}@${REG_DB_HOST}:${REG_DB_PORT}/${REG_DB_NAME}?sslmode=require"
 TARGET_PRISMA_URL="${TARGET_BASE_URL}&schema=public"
 
@@ -93,38 +83,10 @@ pg_restore \
   "$BACKUP_FILE"
 
 cp .env "$ENV_BACKUP"
-
-MASTER_KEY="$(node - <<'NODE'
-const fs = require('fs');
-const crypto = require('crypto');
-const text = fs.readFileSync('.env', 'utf8');
-const match = text.match(/^STORAGE_MASTER_KEY\s*=\s*(.+)$/m);
-if (match && match[1].trim().replace(/^["']|["']$/g, '')) {
-  process.stdout.write(match[1].trim().replace(/^["']|["']$/g, ''));
-} else {
-  process.stdout.write(crypto.randomBytes(32).toString('hex'));
-}
-NODE
-)"
+MASTER_KEY="$(node scripts/reg-cloud-env.mjs master-key)"
 
 echo "5/7 Переключаю .env на облачную базу и добавляю ключ шифрования S3..."
-TARGET_PRISMA_URL="$TARGET_PRISMA_URL" MASTER_KEY="$MASTER_KEY" node - <<'NODE'
-const fs = require('fs');
-let text = fs.readFileSync('.env', 'utf8');
-
-const setValue = (key, value) => {
-  const line = key + '="' + value + '"';
-  const re = new RegExp('^' + key + '\\s*=.*$', 'm');
-  if (re.test(text)) text = text.replace(re, line);
-  else text += (text.endsWith('\n') ? '' : '\n') + line + '\n';
-};
-
-setValue('DATABASE_URL', process.env.TARGET_PRISMA_URL);
-setValue('STORAGE_MASTER_KEY', process.env.MASTER_KEY);
-if (!/^PORT\s*=/m.test(text)) setValue('PORT', '8787');
-
-fs.writeFileSync('.env', text);
-NODE
+TARGET_PRISMA_URL="$TARGET_PRISMA_URL" MASTER_KEY="$MASTER_KEY" node scripts/reg-cloud-env.mjs write-cloud-env
 
 echo "6/7 Проверяю Prisma уже на REG.RU..."
 npm run db:generate
