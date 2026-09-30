@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, BarChart3, BookOpen, Check, ChevronLeft, ChevronUp, ChevronDown,
   CirclePlus, Copy, FileAudio, FolderOpen, Image, Layers3, Loader2, PanelLeftClose,
-  PanelLeftOpen, Plus, RefreshCw, Settings2, Trash2, Upload, Users, Volume2
+  PanelLeftOpen, Plus, RefreshCw, Search, Settings2, Trash2, Upload, Users, Volume2, X
 } from 'lucide-react';
 import './admin.css';
 
@@ -30,11 +30,12 @@ const TASK_TYPES = [
 
 const deepClone = value => JSON.parse(JSON.stringify(value ?? null));
 const clamp = value => Math.max(0, Math.min(100, Number(value || 0)));
-const normalizeAudioPhrase = value => String(value || '')
+const normalizeLibraryText = value => String(value || '')
   .normalize('NFKC')
   .trim()
   .toLocaleLowerCase('en-US')
   .replace(/\s+/g, ' ');
+const normalizeAudioPhrase = normalizeLibraryText;
 
 const api = async (url, options = {}) => {
   const response = await fetch(url, {
@@ -50,7 +51,7 @@ const api = async (url, options = {}) => {
 
 const createScreen = (type = 'choice') => {
   const id = Date.now() + Math.floor(Math.random() * 1000);
-  const base = { id, type, eyebrow: 'Задание', title: '', audioPhrase: '', audioFiles: {}, imageUrl: '' };
+  const base = { id, type, eyebrow: 'Задание', title: '', audioPhrase: '', audioFiles: {}, mediaId: null, imageUrl: '' };
 
   if (type === 'intro') return { ...base, body: '', chips: [] };
   if (type === 'flashcard') return { ...base, phrase: '', translation: '', scene: 'meeting', sceneText: '', reply: '', replyTranslation: '', note: '' };
@@ -166,6 +167,101 @@ function MediaUploader({ kind, value, onChange, label }) {
         {value && <button className="admin-ghost-danger" onClick={() => onChange('')}><Trash2 size={14} /> Убрать</button>}
       </div>
     </div>
+  );
+}
+
+function ImageLibraryPicker({ screen, onChange, mediaLibrary = [] }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [selectedId, setSelectedId] = useState(null);
+
+  const current = mediaLibrary.find(item => item.id === Number(screen.mediaId)) || null;
+  const previewUrl = current?.url || screen.imageUrl || '';
+  const normalizedQuery = normalizeLibraryText(query);
+  const results = mediaLibrary.filter(item => !normalizedQuery || normalizeLibraryText(item.name).includes(normalizedQuery));
+  const selected = mediaLibrary.find(item => item.id === selectedId) || null;
+
+  const openPicker = () => {
+    setSelectedId(current?.id || null);
+    setQuery('');
+    setOpen(true);
+  };
+
+  const attach = () => {
+    if (!selected) return;
+    onChange({ ...screen, mediaId: selected.id, imageUrl: selected.url });
+    setOpen(false);
+  };
+
+  const clear = () => {
+    onChange({ ...screen, mediaId: null, imageUrl: '' });
+    setOpen(false);
+  };
+
+  return (
+    <section className="admin-media-section">
+      <div className="admin-section-minihead">
+        <div><Image size={18} /><strong>Картинка задания</strong></div>
+        <span>выбирается из общей медиатеки</span>
+      </div>
+
+      <div className={`admin-library-image-field ${previewUrl ? 'has-image' : ''}`}>
+        {previewUrl ? (
+          <img src={previewUrl} alt={current?.name || ''} />
+        ) : (
+          <div className="admin-library-image-empty"><Image size={26} /><span>Картинка не выбрана</span></div>
+        )}
+        <div className="admin-library-image-copy">
+          <strong>{current?.name || (previewUrl ? 'Старая картинка урока' : 'Нет картинки')}</strong>
+          <span>{current ? 'Связана с медиатекой: при замене файла обновится автоматически.' : previewUrl ? 'Legacy URL. Можно заменить картинкой из медиатеки.' : 'Открой поиск и выбери заранее загруженное изображение.'}</span>
+          <div className="admin-media-actions">
+            <button className="admin-media-library-choose" onClick={openPicker}><Search size={15} /> {previewUrl ? 'Выбрать другую' : 'Выбрать картинку'}</button>
+            {previewUrl && <button className="admin-ghost-danger" onClick={clear}><Trash2 size={14} /> Убрать</button>}
+          </div>
+        </div>
+      </div>
+
+      {open && (
+        <div className="admin-media-picker-backdrop" onMouseDown={event => {
+          if (event.target === event.currentTarget) setOpen(false);
+        }}>
+          <section className="admin-media-picker-modal" role="dialog" aria-modal="true" aria-label="Выбор картинки">
+            <div className="admin-media-picker-head">
+              <div><strong>Выбери картинку</strong><span>Поиск идёт по названию в медиатеке.</span></div>
+              <button onClick={() => setOpen(false)} aria-label="Закрыть"><X size={18} /></button>
+            </div>
+
+            <label className="admin-media-picker-search">
+              <Search size={17} />
+              <input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Например: Hello" />
+              <span>{results.length}</span>
+            </label>
+
+            <div className="admin-media-picker-grid">
+              {results.map(item => (
+                <button
+                  key={item.id}
+                  className={`admin-media-picker-card ${selectedId === item.id ? 'selected' : ''}`}
+                  onClick={() => setSelectedId(item.id)}
+                >
+                  <img src={item.url} alt="" />
+                  <span>{item.name}</span>
+                  {selectedId === item.id && <i><Check size={14} /></i>}
+                </button>
+              ))}
+              {!results.length && (
+                <div className="admin-media-picker-empty">По запросу «{query}» ничего не найдено. Сначала добавь картинку в раздел «Медиатека».</div>
+              )}
+            </div>
+
+            <div className="admin-media-picker-footer">
+              <span>{selected ? <>Выбрано: <strong>{selected.name}</strong></> : 'Выбери один вариант'}</span>
+              <button onClick={attach} disabled={!selected}><Plus size={16} /> Добавить</button>
+            </div>
+          </section>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -313,7 +409,7 @@ function SpeakingItemsEditor({ items = [], onChange }) {
   );
 }
 
-function ScreenFields({ screen, onChange, audioDictionary }) {
+function ScreenFields({ screen, onChange, audioDictionary, mediaLibrary }) {
   const set = (key, value) => onChange({ ...screen, [key]: value });
 
   return (
@@ -326,6 +422,7 @@ function ScreenFields({ screen, onChange, audioDictionary }) {
             id: screen.id,
             audioPhrase: screen.audioPhrase || '',
             audioFiles: screen.audioFiles || {},
+            mediaId: screen.mediaId || null,
             imageUrl: screen.imageUrl || '',
             eyebrow: screen.eyebrow || next.eyebrow,
           });
@@ -382,20 +479,14 @@ function ScreenFields({ screen, onChange, audioDictionary }) {
         <Field label="Финальный текст" wide><TextArea rows={3} value={screen.finishText} onChange={value => set('finishText', value)} /></Field>
       </>}
 
-      <section className="admin-media-section">
-        <div className="admin-section-minihead">
-          <div><Image size={18} /><strong>Фото задания</strong></div>
-          <span>основной формат 1:1</span>
-        </div>
-        <MediaUploader kind="image" label="Фото 1:1" value={screen.imageUrl || ''} onChange={url => set('imageUrl', url)} />
-      </section>
+      <ImageLibraryPicker screen={screen} onChange={onChange} mediaLibrary={mediaLibrary} />
 
       <AudioPhraseField screen={screen} onChange={onChange} audioDictionary={audioDictionary} />
     </div>
   );
 }
 
-function LessonContentEditor({ draft, setDraft, audioDictionary }) {
+function LessonContentEditor({ draft, setDraft, audioDictionary, mediaLibrary }) {
   const content = draft.content || { version: 1, outcomes: [], screens: [] };
   const screens = content.screens || [];
   const [newType, setNewType] = useState('choice');
@@ -459,7 +550,7 @@ function LessonContentEditor({ draft, setDraft, audioDictionary }) {
                 }} title="Удалить"><Trash2 size={16} /></button>
               </div>
             </summary>
-            <ScreenFields screen={screen} onChange={next => updateScreen(index, next)} audioDictionary={audioDictionary} />
+            <ScreenFields screen={screen} onChange={next => updateScreen(index, next)} audioDictionary={audioDictionary} mediaLibrary={mediaLibrary} />
           </details>
         ))}
         {!screens.length && <div className="admin-empty">В уроке пока нет заданий. Выбери тип и добавь первый экран.</div>}
@@ -473,6 +564,200 @@ function SaveStatus({ state }) {
   if (state === 'error') return <span className="admin-save-state error">Ошибка автосохранения</span>;
   if (state === 'dirty') return <span className="admin-save-state dirty">Есть изменения…</span>;
   return <span className="admin-save-state saved"><Check size={15} /> Всё сохранено</span>;
+}
+
+function MediaLibraryPanel({ entries, setEntries, loading, onReload, onSaveState }) {
+  const [newName, setNewName] = useState('');
+  const [filter, setFilter] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const renameTimers = useRef({});
+
+  const filteredEntries = useMemo(() => {
+    const query = normalizeLibraryText(filter);
+    if (!query) return entries;
+    return entries.filter(entry => normalizeLibraryText(entry.name).includes(query));
+  }, [entries, filter]);
+
+  const uploadImage = async file => {
+    if (!file) return null;
+    const form = new FormData();
+    form.append('file', file);
+    return api('/api/admin/upload/image', { method: 'POST', body: form });
+  };
+
+  const addImage = async file => {
+    const name = newName.trim();
+    if (!name) {
+      window.alert('Сначала дай картинке название.');
+      return;
+    }
+    if (!file) return;
+
+    setUploading(true);
+    onSaveState('saving');
+    let uploaded = null;
+    try {
+      uploaded = await uploadImage(file);
+      const created = await api('/api/admin/media-library', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          url: uploaded.url,
+          mimeType: uploaded.mimeType,
+          originalName: uploaded.originalName,
+          size: uploaded.size,
+        }),
+      });
+      setEntries(list => [...list, created].sort((a, b) => a.name.localeCompare(b.name, 'en')));
+      setNewName('');
+      onSaveState('saved');
+    } catch (error) {
+      onSaveState('error');
+      if (uploaded?.url) {
+        api('/api/admin/media', { method: 'DELETE', body: JSON.stringify({ url: uploaded.url }) }).catch(() => {});
+      }
+      window.alert(error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const scheduleRename = (id, name) => {
+    setEntries(list => list.map(entry => entry.id === id ? { ...entry, name } : entry));
+    window.clearTimeout(renameTimers.current[id]);
+    onSaveState('dirty');
+
+    renameTimers.current[id] = window.setTimeout(async () => {
+      onSaveState('saving');
+      try {
+        const updated = await api(`/api/admin/media-library/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ name }),
+        });
+        setEntries(list => list.map(entry => entry.id === id
+          ? entry.name === name ? updated : { ...entry, key: normalizeLibraryText(entry.name), updatedAt: updated.updatedAt }
+          : entry));
+        onSaveState('saved');
+      } catch (error) {
+        onSaveState('error');
+        window.alert(error.message);
+        await onReload();
+      }
+    }, 700);
+  };
+
+  const replaceImage = async (entry, file) => {
+    if (!file) return;
+    onSaveState('saving');
+    let uploaded = null;
+    try {
+      uploaded = await uploadImage(file);
+      const updated = await api(`/api/admin/media-library/${entry.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          url: uploaded.url,
+          mimeType: uploaded.mimeType,
+          originalName: uploaded.originalName,
+          size: uploaded.size,
+        }),
+      });
+      setEntries(list => list.map(item => item.id === entry.id ? { ...updated, name: item.name } : item));
+      if (entry.url?.startsWith('/uploads/')) {
+        api('/api/admin/media', { method: 'DELETE', body: JSON.stringify({ url: entry.url }) }).catch(() => {});
+      }
+      onSaveState('saved');
+    } catch (error) {
+      onSaveState('error');
+      if (uploaded?.url) {
+        api('/api/admin/media', { method: 'DELETE', body: JSON.stringify({ url: uploaded.url }) }).catch(() => {});
+      }
+      window.alert(error.message);
+    }
+  };
+
+  const deleteImage = async entry => {
+    if (!window.confirm(`Удалить «${entry.name}» из медиатеки?`)) return;
+    onSaveState('saving');
+    try {
+      await api(`/api/admin/media-library/${entry.id}`, { method: 'DELETE' });
+      setEntries(list => list.filter(item => item.id !== entry.id));
+      if (entry.url?.startsWith('/uploads/')) {
+        api('/api/admin/media', { method: 'DELETE', body: JSON.stringify({ url: entry.url }) }).catch(() => {});
+      }
+      onSaveState('saved');
+    } catch (error) {
+      onSaveState('error');
+      window.alert(error.message);
+    }
+  };
+
+  if (loading) {
+    return <div className="admin-loading"><Loader2 className="spin" /> Загружаем медиатеку…</div>;
+  }
+
+  return (
+    <div className="admin-media-library-page">
+      <div className="admin-editor-head">
+        <div className="admin-editor-heading">
+          <div className="admin-editor-path">Общая библиотека изображений</div>
+          <h1>Медиатека</h1>
+          <p>Загружай картинку один раз, дай ей понятное название и затем находи её поиском в любом задании.</p>
+        </div>
+      </div>
+
+      <section className="admin-media-library-add">
+        <div>
+          <strong>Добавить картинку</strong>
+          <span>Например: Hello, Hello there, Hello everyone.</span>
+        </div>
+        <div className="admin-media-library-add-controls">
+          <input value={newName} onChange={event => setNewName(event.target.value)} placeholder="Название картинки" />
+          <label className={`admin-media-library-upload ${uploading ? 'disabled' : ''}`}>
+            {uploading ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
+            {uploading ? 'Загрузка…' : 'Выбрать файл'}
+            <input type="file" accept="image/*" hidden disabled={uploading} onChange={event => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              void addImage(file);
+            }} />
+          </label>
+        </div>
+      </section>
+
+      <label className="admin-media-library-filter">
+        <Search size={17} />
+        <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Поиск по названию…" />
+        <span>{filteredEntries.length} из {entries.length}</span>
+      </label>
+
+      <div className="admin-media-library-grid">
+        {filteredEntries.map(entry => (
+          <article className="admin-media-library-card" key={entry.id}>
+            <div className="admin-media-library-thumb"><img src={entry.url} alt="" /></div>
+            <div className="admin-media-library-card-body">
+              <span>Название</span>
+              <input value={entry.name} onChange={event => scheduleRename(entry.id, event.target.value)} />
+              <small>{entry.originalName || 'изображение'}{entry.size ? ` · ${Math.max(1, Math.round(entry.size / 1024))} КБ` : ''}</small>
+              <div className="admin-media-actions">
+                <label className="admin-upload-btn">
+                  <Upload size={14} /> Заменить файл
+                  <input type="file" accept="image/*" hidden onChange={event => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    void replaceImage(entry, file);
+                  }} />
+                </label>
+                <button className="admin-ghost-danger" onClick={() => deleteImage(entry)}><Trash2 size={14} /> Удалить</button>
+              </div>
+            </div>
+          </article>
+        ))}
+        {!filteredEntries.length && (
+          <div className="admin-empty admin-media-library-empty">{entries.length ? 'По этому запросу картинок нет.' : 'Медиатека пока пустая. Добавь первую картинку выше.'}</div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveState }) {
@@ -751,6 +1036,8 @@ function AdminApp() {
   const [voicesLoading, setVoicesLoading] = useState(true);
   const [audioDictionary, setAudioDictionary] = useState([]);
   const [audioDictionaryLoading, setAudioDictionaryLoading] = useState(true);
+  const [mediaLibrary, setMediaLibrary] = useState([]);
+  const [mediaLibraryLoading, setMediaLibraryLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState('saved');
   const [selectedModuleId, setSelectedModuleId] = useState(null);
@@ -811,10 +1098,25 @@ function AdminApp() {
     }
   };
 
+  const loadMediaLibrary = async () => {
+    setMediaLibraryLoading(true);
+    try {
+      const data = await api('/api/admin/media-library');
+      setMediaLibrary(data);
+      return data;
+    } catch (error) {
+      window.alert(error.message);
+      return [];
+    } finally {
+      setMediaLibraryLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadTree();
     void loadVoices();
     void loadAudioDictionary();
+    void loadMediaLibrary();
   }, []);
 
   useEffect(() => {
@@ -1062,9 +1364,15 @@ function AdminApp() {
         <div className="admin-top-actions">
           <SaveStatus state={saveState} />
           <button
-            onClick={() => adminSection === 'voices' ? loadVoices() : adminSection === 'audioDictionary' ? loadAudioDictionary() : loadTree()}
-            disabled={loading || voicesLoading || audioDictionaryLoading}
-          ><RefreshCw size={16} className={(loading || voicesLoading || audioDictionaryLoading) ? 'spin' : ''} /> Обновить данные</button>
+            onClick={() => adminSection === 'voices'
+              ? loadVoices()
+              : adminSection === 'audioDictionary'
+                ? loadAudioDictionary()
+                : adminSection === 'mediaLibrary'
+                  ? loadMediaLibrary()
+                  : loadTree()}
+            disabled={loading || voicesLoading || audioDictionaryLoading || mediaLibraryLoading}
+          ><RefreshCw size={16} className={(loading || voicesLoading || audioDictionaryLoading || mediaLibraryLoading) ? 'spin' : ''} /> Обновить данные</button>
           <a href="/">Открыть сайт</a>
         </div>
       </header>
@@ -1091,7 +1399,12 @@ function AdminApp() {
             <FileAudio size={19} /><span><strong>Аудиословарь</strong><small>{audioDictionary.length} фраз</small></span>
           </button>
           <button disabled><Users size={19} /><span><strong>Пользователи</strong><small>скоро</small></span></button>
-          <button disabled><Image size={19} /><span><strong>Медиатека</strong><small>скоро</small></span></button>
+          <button
+            className={adminSection === 'mediaLibrary' ? 'active' : ''}
+            onClick={() => { setAdminSection('mediaLibrary'); setBrowserOpen(false); }}
+          >
+            <Image size={19} /><span><strong>Медиатека</strong><small>{mediaLibrary.length} картинок</small></span>
+          </button>
           <button disabled><BarChart3 size={19} /><span><strong>Аналитика</strong><small>скоро</small></span></button>
           <button disabled><Settings2 size={19} /><span><strong>Настройки</strong><small>скоро</small></span></button>
         </aside>
@@ -1126,6 +1439,14 @@ function AdminApp() {
               onReload={loadAudioDictionary}
               onSaveState={setSaveState}
             />
+          ) : adminSection === 'mediaLibrary' ? (
+            <MediaLibraryPanel
+              entries={mediaLibrary}
+              setEntries={setMediaLibrary}
+              loading={mediaLibraryLoading}
+              onReload={loadMediaLibrary}
+              onSaveState={setSaveState}
+            />
           ) : loading ? (
             <div className="admin-loading"><Loader2 className="spin" /> Загружаем курс…</div>
           ) : lessonDraft ? (
@@ -1134,7 +1455,7 @@ function AdminApp() {
                 <div className="admin-editor-heading">
                   <div className="admin-editor-path">{crumbs.join(' / ')}</div>
                   <h1>{lessonDraft.title || 'Без названия'}</h1>
-                  <p>Редактируй урок и задания. Для озвучки укажи фразу из общего аудиословаря — сохранение происходит автоматически.</p>
+                  <p>Редактируй урок и задания. Озвучка берётся из аудиословаря, картинки — из общей медиатеки. Сохранение происходит автоматически.</p>
                 </div>
                 <div className="admin-editor-actions">
                   <button className="structure" onClick={() => { setBrowserOpen(true); setBrowserLevel('lessons'); }}><PanelLeftOpen size={17} /> Структура курса</button>
@@ -1157,7 +1478,7 @@ function AdminApp() {
                 </div>
               </section>
 
-              <LessonContentEditor draft={lessonDraft} setDraft={setLessonDraft} audioDictionary={audioDictionary} />
+              <LessonContentEditor draft={lessonDraft} setDraft={setLessonDraft} audioDictionary={audioDictionary} mediaLibrary={mediaLibrary} />
             </>
           ) : blockDraft ? (
             <>
