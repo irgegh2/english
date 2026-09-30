@@ -1314,6 +1314,7 @@ function SpecTaskScreen({
                   onSelect={value => setAnswer(index, value)}
                   confirmed={confirmation.status !== 'idle'}
                   locked={locked}
+                  getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
                 />
               ) : (
                 <ChoiceOptions
@@ -1323,6 +1324,7 @@ function SpecTaskScreen({
                   onSelect={value => setAnswer(index, value)}
                   confirmed={confirmation.status !== 'idle'}
                   locked={locked}
+                  getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
                 />
               )}
             </div>
@@ -1377,11 +1379,23 @@ function SpecTaskScreen({
         <div className={`sentence-builder ${confirmation.status === 'correct' ? 'confirmed-correct' : confirmation.status === 'wrong' ? 'confirmed-wrong' : ''}`}>
           <div className="sentence-built">
             {ordered.length
-              ? ordered.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => current.filter((_, i) => i !== index))}>{token}</button>)
+              ? ordered.map((token, index) => {
+                  const tokenAudio = getTextAudio(screen, token, voicePreset);
+                  return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={locked} onClick={() => {
+                    if (tokenAudio) playLessonAudio(tokenAudio);
+                    setOrder(current => current.filter((_, i) => i !== index));
+                  }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+                })
               : <span>Нажимай на элементы по порядку</span>}
           </div>
           <div className="sentence-tokens">
-            {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
+            {remaining.map((token, index) => {
+              const tokenAudio = getTextAudio(screen, token, voicePreset);
+              return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={locked} onClick={() => {
+                if (tokenAudio) playLessonAudio(tokenAudio);
+                setOrder(current => [...current, token]);
+              }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+            })}
           </div>
         </div>
       </div>
@@ -1688,6 +1702,16 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       setConfirmation({ status: 'correct' });
       setSessionStats(current => ({ ...current, correctChecks: current.correctChecks + 1 }));
       playUiSound('success');
+
+      const completedLine = screen.type === 'order'
+        ? (screen.answer || []).join(' ')
+        : screen.type === 'specTask' && specMode === 'order'
+          ? specOrder.answer.join(' ')
+          : '';
+      const completedLineAudio = completedLine ? getTextAudio(screen, completedLine, voicePreset) : '';
+      if (completedLineAudio) {
+        window.setTimeout(() => playLessonAudio(completedLineAudio), 260);
+      }
     } else {
       setConfirmation({ status: 'wrong' });
       setSessionStats(current => ({ ...current, wrongAttempts: current.wrongAttempts + 1 }));
@@ -1812,12 +1836,20 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             <span className="lesson-eyebrow">{screen.eyebrow}</span>
             <h1>{screen.phrase}</h1>
             <p className="lesson-translation">{screen.translation}</p>
-            <LessonAudioButton url={screenAudio} />
+            <LessonAudioButton url={screenAudio || getTextAudio(screen, screen.phrase, voicePreset)} />
             <div className="lesson-context-note">{screen.sceneText}</div>
             {screen.reply && (
               <div className="lesson-reply">
                 <span>Мини-ответ</span>
                 <strong>{screen.reply}</strong>
+                {getTextAudio(screen, screen.reply, voicePreset) && (
+                  <button
+                    className="lesson-inline-audio"
+                    data-ui-click="off"
+                    onClick={() => playTextAudio(screen, screen.reply, voicePreset)}
+                    title="Послушать"
+                  ><Volume2 size={14} /></button>
+                )}
                 <small>{screen.replyTranslation}</small>
               </div>
             )}
@@ -1847,6 +1879,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
             onSelect={value => setAnswer('single', value)}
             confirmed={confirmation.status !== 'idle'}
             locked={confirmation.status === 'correct'}
+            getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
           />
           {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Верно!</p>}
           {confirmation.status === 'wrong' && <p className="lesson-feedback error">Неверно. Выбери другой вариант и попробуй ещё раз.</p>}
@@ -1866,7 +1899,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <div className="lesson-multi-stack">
             {(screen.items || []).map((item, index) => (
               <div className="lesson-multi-item" key={index}>
-                {item.scene && <SceneArt type={item.scene} compact imageUrl={item.imageUrl || ''} />}
+                {item.scene && <SceneArt type={item.scene} compact imageUrl={item.resolvedImageUrl || item.imageUrl || ''} />}
                 <strong>{item.prompt}</strong>
                 <ChoiceOptions
                   options={item.options}
@@ -1875,6 +1908,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
                   onSelect={value => setAnswer(index, value)}
                   confirmed={confirmation.status !== 'idle'}
                   locked={confirmation.status === 'correct'}
+                  getOptionAudio={option => getTextAudio(screen, option, voicePreset)}
                 />
               </div>
             ))}
@@ -1894,7 +1928,17 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <div className="classify-list">
             {screen.items.map((item, index) => (
               <div className="classify-row" key={item.text}>
-                <strong>{item.text}</strong>
+                <div className="classify-word">
+                  <strong>{item.text}</strong>
+                  {getTextAudio(screen, item.text, voicePreset) && (
+                    <button
+                      className="lesson-inline-audio"
+                      data-ui-click="off"
+                      onClick={() => playTextAudio(screen, item.text, voicePreset)}
+                      title="Послушать слово"
+                    ><Volume2 size={14} /></button>
+                  )}
+                </div>
                 <div>
                   {screen.categories.map(category => (
                     <button
@@ -1934,10 +1978,22 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           {screenAudio && <LessonAudioButton url={screenAudio} />}
           <div className={`sentence-builder ${confirmation.status === 'correct' ? 'confirmed-correct' : confirmation.status === 'wrong' ? 'confirmed-wrong' : ''}`}>
             <div className="sentence-built">
-              {ordered.length ? ordered.map((token, index) => <button key={`${token}-${index}`} disabled={confirmation.status === 'correct'} onClick={() => setOrder(current => current.filter((_, i) => i !== index))}>{token}</button>) : <span>Нажимай на слова по порядку</span>}
+              {ordered.length ? ordered.map((token, index) => {
+                const tokenAudio = getTextAudio(screen, token, voicePreset);
+                return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={confirmation.status === 'correct'} onClick={() => {
+                  if (tokenAudio) playLessonAudio(tokenAudio);
+                  setOrder(current => current.filter((_, i) => i !== index));
+                }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+              }) : <span>Нажимай на слова по порядку</span>}
             </div>
             <div className="sentence-tokens">
-              {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={confirmation.status === 'correct'} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
+              {remaining.map((token, index) => {
+                const tokenAudio = getTextAudio(screen, token, voicePreset);
+                return <button key={`${token}-${index}`} data-ui-click={tokenAudio ? 'off' : undefined} disabled={confirmation.status === 'correct'} onClick={() => {
+                  if (tokenAudio) playLessonAudio(tokenAudio);
+                  setOrder(current => [...current, token]);
+                }}>{token}{tokenAudio && <Volume2 size={13} />}</button>;
+              })}
             </div>
           </div>
           {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Фраза собрана правильно.</p>}
@@ -2017,7 +2073,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <button className="lesson-exit-btn" onClick={exitLesson}><ChevronLeft size={19} /> <span>К урокам</span></button>
 
         <div className="lesson-step-copy">
-          <span>Урок</span>
+          <span>Задание</span>
           <strong>{step + 1} / {screens.length}</strong>
           <em><Volume2 size={14} /> {getVoicePreset(voicePreset).name}</em>
         </div>
