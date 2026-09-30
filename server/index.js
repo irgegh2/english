@@ -29,7 +29,7 @@ const upload = multer({
       ? file.mimetype.startsWith('audio/')
       : kind === 'image'
         ? file.mimetype.startsWith('image/')
-        : false;
+        : kind === 'file';
     cb(valid ? null : new Error('Unsupported media type'), valid);
   },
 });
@@ -117,7 +117,7 @@ function createStorageClient(settings) {
 }
 
 function storageObjectKey(kind, originalName = '') {
-  const folder = kind === 'image' ? 'images' : 'audio';
+  const folder = kind === 'image' ? 'images' : kind === 'audio' ? 'audio' : 'files';
   const ext = path.extname(originalName || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
   return `${folder}/${Date.now()}-${crypto.randomUUID()}${ext || ''}`;
 }
@@ -557,13 +557,39 @@ app.patch('/api/admin/storage-settings', async (req, res) => {
 });
 
 app.post('/api/admin/storage-settings/test', async (_req, res) => {
+  let client = null;
+  let settings = null;
+  let key = null;
+
   try {
-    const settings = await getStorageSettings();
-    const client = createStorageClient(settings);
+    settings = await getStorageSettings();
+    client = createStorageClient(settings);
     await client.send(new HeadBucketCommand({ Bucket: settings.bucket }));
-    res.json({ ok: true, message: 'Подключение к REG.RU S3 работает.' });
+
+    key = `healthchecks/${Date.now()}-${crypto.randomUUID()}.txt`;
+    await client.send(new PutObjectCommand({
+      Bucket: settings.bucket,
+      Key: key,
+      Body: Buffer.from('skladno-storage-ok', 'utf8'),
+      ContentType: 'text/plain; charset=utf-8',
+      ACL: 'public-read',
+    }));
+
+    const publicUrl = storagePublicUrl(settings, key);
+    const response = await fetch(publicUrl, { method: 'GET' });
+    if (!response.ok) {
+      throw new Error(`S3 принимает загрузку, но публичное чтение не работает (HTTP ${response.status}). Для картинок и аудио нужен публичный доступ к объектам.`);
+    }
+
+    res.json({ ok: true, message: 'Подключение к REG.RU S3 работает: запись и публичное чтение проверены.' });
   } catch (error) {
     res.status(400).json({ error: error.message });
+  } finally {
+    if (client && settings && key) {
+      try {
+        await client.send(new DeleteObjectCommand({ Bucket: settings.bucket, Key: key }));
+      } catch {}
+    }
   }
 });
 
@@ -1088,7 +1114,7 @@ app.delete('/api/admin/lessons/:id', async (req, res) => {
 });
 
 app.post('/api/admin/upload/:kind', (req, res, next) => {
-  if (!['audio', 'image'].includes(req.params.kind)) return res.status(400).json({ error: 'Invalid media kind' });
+  if (!['audio', 'image', 'file'].includes(req.params.kind)) return res.status(400).json({ error: 'Invalid media kind' });
   next();
 }, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'File is required' });
