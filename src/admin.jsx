@@ -1073,7 +1073,7 @@ function StorageSettingsPanel({ settings, setSettings, loading, onReload, onSave
             <TextInput value={draft.endpoint || ''} onChange={value => set('endpoint', value)} placeholder="https://s3.regru.cloud" />
           </Field>
           <Field label="Bucket">
-            <TextInput value={draft.bucket || ''} onChange={value => set('bucket', value)} placeholder="английский" />
+            <TextInput value={draft.bucket || ''} onChange={value => set('bucket', value)} placeholder="angliskii" />
           </Field>
           <Field label="Region">
             <TextInput value={draft.region || 'us-east-1'} onChange={value => set('region', value)} />
