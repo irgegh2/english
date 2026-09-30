@@ -880,19 +880,22 @@ app.patch('/api/admin/audio-dictionary/:id', async (req, res) => {
         let changed = false;
         const screens = content.screens.map(screen => {
           let next = screen;
+          let screenChanged = false;
 
           if (normalizeAudioPhrase(screen?.audioPhrase) === renamedPhrase.oldKey) {
             next = { ...next, audioPhrase: renamedPhrase.text };
             changed = true;
+            screenChanged = true;
           }
 
           if (Array.isArray(screen?.audioPhrases)) {
             const audioPhrases = screen.audioPhrases.map(phrase => {
               if (normalizeAudioPhrase(phrase) !== renamedPhrase.oldKey) return phrase;
               changed = true;
+              screenChanged = true;
               return renamedPhrase.text;
             });
-            if (changed) next = { ...next, audioPhrases };
+            if (screenChanged) next = { ...next, audioPhrases };
           }
 
           return next;
