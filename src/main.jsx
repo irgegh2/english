@@ -313,10 +313,7 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange,
 
             <div className="settings-footer">
               <span>Выбран голос: <strong>{selectedVoice.name}</strong></span>
-              <div className="settings-footer-actions">
-                <button className="settings-admin-link" onClick={() => { window.location.href = '/admin'; }}>Админка курса</button>
-                <button onClick={() => setSettingsOpen(false)}>Готово</button>
-              </div>
+              <button onClick={() => setSettingsOpen(false)}>Готово</button>
             </div>
           </section>
         </div>
@@ -471,7 +468,6 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 
 let activeLessonAudio = null;
 
-const LESSON_TEST_MODE = import.meta.env.DEV;
 const UI_SOUND_VERSION = '20260930-5';
 const UI_SOUNDS = {
   click: { url: `/assets/sounds/mclick.mp3?v=${UI_SOUND_VERSION}`, volume: 0.42 },
@@ -1196,18 +1192,12 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-step-copy">
           <span>Урок</span>
           <strong>{step + 1} / {screens.length}</strong>
-          {LESSON_TEST_MODE && <b className="lesson-test-badge">ТЕСТ</b>}
           <em><Volume2 size={14} /> {getVoicePreset(voicePreset).name}</em>
         </div>
 
         <div className="lesson-progress-area">
           <div className="lesson-screen-progress"><i style={{ width: `${lessonPercent}%` }} /></div>
           <strong>{lessonPercent}%</strong>
-          {LESSON_TEST_MODE && (
-            <button className="lesson-test-sound" data-ui-click="off" onClick={() => playUiSound('end')} title="Проверить звук завершения">
-              END
-            </button>
-          )}
           <button className="lesson-fullscreen-btn" onClick={toggleFullscreen} title={isFullscreen ? 'Выйти из полного экрана' : 'На весь экран'}>
             {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
           </button>
@@ -1221,22 +1211,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       <div className={`lesson-runner-footer ${confirmation.status !== 'idle' ? `feedback-${confirmation.status}` : ''}`}>
         <button className="lesson-secondary-action" onClick={previous} disabled={step === 0}>Назад</button>
 
-        {LESSON_TEST_MODE ? (
-          <div className="lesson-test-actions">
-            {isCheckable && selectionReady && confirmation.status === 'idle' && (
-              <button className="lesson-test-check" data-ui-click="off" onClick={confirmAnswer}>
-                Проверить <Check size={17} />
-              </button>
-            )}
-            <button
-              className="lesson-primary-action"
-              data-ui-click={step === screens.length - 1 ? 'off' : undefined}
-              onClick={next}
-            >
-              {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={19} />
-            </button>
-          </div>
-        ) : isCheckable && confirmation.status !== 'correct' ? (
+        {isCheckable && confirmation.status !== 'correct' ? (
           <button
             className="lesson-primary-action lesson-confirm-action"
             data-ui-click="off"
