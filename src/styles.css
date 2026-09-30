@@ -3723,3 +3723,15 @@ svg{stroke-width:1.8}
     transform:none !important;
   }
 }
+
+
+/* ===== Lesson mode: lock the document itself, not only the lesson card ===== */
+html.lesson-scroll-locked,
+body.lesson-scroll-locked{
+  overflow:hidden !important;
+  overscroll-behavior:none !important;
+  scroll-behavior:auto !important;
+}
+body.lesson-scroll-locked{
+  touch-action:none;
+}
