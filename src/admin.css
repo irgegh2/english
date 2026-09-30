@@ -631,3 +631,291 @@ body{margin:0}
 @media(max-width:1050px){
   .admin-voice-cards{grid-template-columns:1fr}
 }
+
+
+/* ===== Shared audio dictionary ===== */
+.admin-audio-reference-section{
+  margin-top:8px;
+}
+.admin-audio-reference{
+  border:1px solid #dde7e4;
+  border-radius:14px;
+  padding:13px;
+  background:#f8faf9;
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.admin-audio-reference.ready{
+  border-color:#afdacf;
+  background:#effaf6;
+  box-shadow:0 0 0 2px rgba(17,143,127,.04);
+}
+.admin-audio-reference.missing{
+  border-color:#edc9c2;
+  background:#fff7f5;
+  box-shadow:0 0 0 2px rgba(184,91,70,.035);
+}
+.admin-audio-reference .admin-field{
+  margin:0;
+}
+.admin-audio-reference.ready .admin-field input{
+  border-color:#9fd2c5;
+  background:#fbfffd;
+}
+.admin-audio-reference.missing .admin-field input{
+  border-color:#e5b8ae;
+  background:#fffdfc;
+}
+.admin-audio-reference-status{
+  margin-top:9px;
+  min-height:30px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  border-radius:9px;
+  padding:0 10px;
+  font-size:9px;
+  font-weight:800;
+  color:#718388;
+  background:#fff;
+  border:1px solid #e1e8e6;
+}
+.admin-audio-reference.ready .admin-audio-reference-status{
+  color:#087c70;
+  border-color:#c3e3da;
+  background:#f8fffc;
+}
+.admin-audio-reference.missing .admin-audio-reference-status{
+  color:#a75e50;
+  border-color:#ebd1cb;
+  background:#fff;
+}
+.admin-audio-reference-status .dot{
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#a4b0b2;
+}
+.admin-audio-reference.missing .admin-audio-reference-status .dot{
+  background:#c97968;
+}
+.admin-audio-voice-statuses{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+  margin-top:9px;
+}
+.admin-audio-voice-statuses span{
+  min-height:25px;
+  padding:0 8px;
+  border-radius:999px;
+  background:#f1f3f2;
+  color:#9a6d65;
+  display:flex;
+  align-items:center;
+  gap:4px;
+  font-size:8px;
+  font-weight:800;
+}
+.admin-audio-voice-statuses span.ready{
+  background:#e4f5ef;
+  color:#0b8075;
+}
+.admin-audio-reference-help,
+.admin-audio-legacy-note{
+  margin:9px 0 0;
+  font-size:8.5px;
+  line-height:1.5;
+}
+.admin-audio-reference-help{
+  color:#9c6257;
+}
+.admin-audio-legacy-note{
+  padding:8px 9px;
+  border-radius:9px;
+  background:#fff7dc;
+  color:#8a7440;
+  border:1px solid #eee0aa;
+}
+
+.admin-audio-dictionary-page{
+  max-width:1260px;
+  margin:0 auto;
+}
+.admin-audio-dict-add{
+  border:1px solid #cfe4de;
+  border-radius:16px;
+  background:#f1faf7;
+  padding:15px 16px;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:18px;
+  margin-bottom:14px;
+}
+.admin-audio-dict-add>div:first-child{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+.admin-audio-dict-add strong{
+  color:#28505a;
+  font-size:11px;
+}
+.admin-audio-dict-add span{
+  color:#71888d;
+  font-size:8.5px;
+}
+.admin-audio-dict-add-controls{
+  display:flex;
+  gap:7px;
+  min-width:min(560px,55%);
+}
+.admin-audio-dict-add-controls input,
+.admin-audio-dict-toolbar input,
+.admin-audio-dict-phrase input{
+  min-width:0;
+  height:39px;
+  border:1px solid #d6e1de;
+  border-radius:10px;
+  background:#fff;
+  color:#264b54;
+  padding:0 11px;
+  outline:none;
+  font:inherit;
+  font-size:10px;
+}
+.admin-audio-dict-add-controls input:focus,
+.admin-audio-dict-toolbar input:focus,
+.admin-audio-dict-phrase input:focus{
+  border-color:#79bdb0;
+  box-shadow:0 0 0 3px rgba(33,143,126,.08);
+}
+.admin-audio-dict-add-controls input{
+  flex:1;
+}
+.admin-audio-dict-add-controls button{
+  min-height:39px;
+  border:0;
+  border-radius:10px;
+  background:#0e8176;
+  color:#fff;
+  padding:0 13px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+  font-size:9px;
+  font-weight:800;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.admin-audio-dict-add-controls button:disabled{
+  opacity:.45;
+  cursor:default;
+}
+.admin-audio-dict-toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0 0 10px;
+}
+.admin-audio-dict-toolbar input{
+  width:min(440px,70%);
+}
+.admin-audio-dict-toolbar span{
+  color:#849497;
+  font-size:8.5px;
+}
+.admin-audio-dict-list{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+.admin-audio-dict-card{
+  border:1px solid #dce6e3;
+  border-radius:16px;
+  background:#fff;
+  padding:14px;
+  box-shadow:0 4px 14px rgba(29,67,69,.022);
+}
+.admin-audio-dict-card-head{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto 34px;
+  gap:10px;
+  align-items:end;
+  margin-bottom:11px;
+}
+.admin-audio-dict-phrase{
+  min-width:0;
+  display:flex;
+  flex-direction:column;
+  gap:5px;
+}
+.admin-audio-dict-phrase>span{
+  font-size:8px;
+  font-weight:800;
+  color:#7e9094;
+  text-transform:uppercase;
+  letter-spacing:.04em;
+}
+.admin-audio-dict-phrase input{
+  width:100%;
+  font-size:12px;
+  font-weight:700;
+}
+.admin-audio-dict-state{
+  min-height:32px;
+  padding:0 10px;
+  border-radius:999px;
+  display:flex;
+  align-items:center;
+  gap:5px;
+  font-size:8px;
+  font-weight:800;
+  white-space:nowrap;
+}
+.admin-audio-dict-state.ready{
+  color:#087d71;
+  background:#e8f7f2;
+}
+.admin-audio-dict-state.missing{
+  color:#a76457;
+  background:#fff0ed;
+}
+.admin-audio-dict-delete{
+  width:34px;
+  height:34px;
+  border:1px solid #ead5d0;
+  border-radius:9px;
+  background:#fff;
+  color:#a86559;
+  display:grid;
+  place-items:center;
+  cursor:pointer;
+}
+.admin-audio-dict-delete:hover{
+  background:#fff5f2;
+}
+.admin-audio-dict-card .admin-media-slot{
+  background:#fafcfb;
+}
+
+@media(max-width:900px){
+  .admin-audio-dict-add{
+    align-items:stretch;
+    flex-direction:column;
+  }
+  .admin-audio-dict-add-controls{
+    min-width:0;
+    width:100%;
+  }
+  .admin-audio-dict-card-head{
+    grid-template-columns:minmax(0,1fr) auto;
+  }
+  .admin-audio-dict-delete{
+    grid-column:2;
+    grid-row:2;
+    justify-self:end;
+  }
+}

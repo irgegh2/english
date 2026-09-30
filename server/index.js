@@ -56,6 +56,54 @@ const DEFAULT_VOICES = [
 ];
 const VOICE_IDS = new Set(DEFAULT_VOICES.map(voice => voice.id));
 
+const normalizeAudioPhrase = value => asString(value)
+  .normalize('NFKC')
+  .trim()
+  .toLocaleLowerCase('en-US')
+  .replace(/\s+/g, ' ');
+
+const sanitizeAudioFiles = value => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const files = {};
+  for (const voiceId of VOICE_IDS) {
+    const url = asString(value[voiceId]).trim();
+    if (url) files[voiceId] = url;
+  }
+  return files;
+};
+
+async function hydrateLessonAudio(lesson) {
+  const content = lesson?.content;
+  const screens = content && typeof content === 'object' && Array.isArray(content.screens)
+    ? content.screens
+    : [];
+
+  const keys = [...new Set(
+    screens
+      .map(screen => normalizeAudioPhrase(screen?.audioPhrase))
+      .filter(Boolean)
+  )];
+
+  if (!keys.length) return lesson;
+
+  const entries = await prisma.audioPhrase.findMany({
+    where: { key: { in: keys } },
+  });
+  const byKey = new Map(entries.map(entry => [entry.key, sanitizeAudioFiles(entry.audioFiles)]));
+
+  return {
+    ...lesson,
+    content: {
+      ...content,
+      screens: screens.map(screen => {
+        const key = normalizeAudioPhrase(screen?.audioPhrase);
+        const resolvedAudioFiles = key ? byKey.get(key) : null;
+        return resolvedAudioFiles ? { ...screen, resolvedAudioFiles } : screen;
+      }),
+    },
+  };
+}
+
 async function ensureVoiceProfiles() {
   for (const voice of DEFAULT_VOICES) {
     await prisma.voiceProfile.upsert({
@@ -208,7 +256,7 @@ app.get('/api/course/lessons/:id', async (req, res) => {
     });
 
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
-    res.json(lesson);
+    res.json(await hydrateLessonAudio(lesson));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -280,6 +328,116 @@ app.patch('/api/admin/voices/:id', async (req, res) => {
 
     const voice = await prisma.voiceProfile.update({ where: { id }, data });
     res.json(voice);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.get('/api/admin/audio-dictionary', async (_req, res) => {
+  try {
+    const entries = await prisma.audioPhrase.findMany({
+      orderBy: [{ text: 'asc' }, { id: 'asc' }],
+    });
+    res.json(entries);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/audio-dictionary', async (req, res) => {
+  const text = asString(req.body.text).trim();
+  const key = normalizeAudioPhrase(text);
+  if (!key) return res.status(400).json({ error: 'Phrase text is required' });
+
+  try {
+    const existing = await prisma.audioPhrase.findUnique({ where: { key } });
+    if (existing) return res.status(409).json({ error: 'Эта фраза уже есть в аудиословаре' });
+
+    const entry = await prisma.audioPhrase.create({
+      data: {
+        text,
+        key,
+        audioFiles: sanitizeAudioFiles(req.body.audioFiles),
+      },
+    });
+    res.status(201).json(entry);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/audio-dictionary/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid audio phrase id' });
+
+  try {
+    const current = await prisma.audioPhrase.findUnique({ where: { id } });
+    if (!current) return res.status(404).json({ error: 'Audio phrase not found' });
+
+    const data = {};
+    let renamedPhrase = null;
+
+    if ('text' in req.body) {
+      const text = asString(req.body.text).trim();
+      const key = normalizeAudioPhrase(text);
+      if (!key) return res.status(400).json({ error: 'Phrase text is required' });
+
+      const duplicate = await prisma.audioPhrase.findUnique({ where: { key } });
+      if (duplicate && duplicate.id !== id) {
+        return res.status(409).json({ error: 'Эта фраза уже есть в аудиословаре' });
+      }
+
+      data.text = text;
+      data.key = key;
+      if (key !== current.key) renamedPhrase = { text, oldKey: current.key };
+    }
+
+    if ('audioFiles' in req.body) {
+      data.audioFiles = sanitizeAudioFiles(req.body.audioFiles);
+    }
+
+    const lessonUpdates = [];
+    if (renamedPhrase) {
+      const lessons = await prisma.lesson.findMany({ select: { id: true, content: true } });
+      for (const lesson of lessons) {
+        const content = lesson.content;
+        if (!content || typeof content !== 'object' || !Array.isArray(content.screens)) continue;
+
+        let changed = false;
+        const screens = content.screens.map(screen => {
+          if (normalizeAudioPhrase(screen?.audioPhrase) !== renamedPhrase.oldKey) return screen;
+          changed = true;
+          return { ...screen, audioPhrase: renamedPhrase.text };
+        });
+
+        if (changed) lessonUpdates.push({ id: lesson.id, content: { ...content, screens } });
+      }
+    }
+
+    const entry = await prisma.$transaction(async tx => {
+      const updated = await tx.audioPhrase.update({ where: { id }, data });
+      for (const lesson of lessonUpdates) {
+        await tx.lesson.update({
+          where: { id: lesson.id },
+          data: { content: lesson.content },
+        });
+      }
+      return updated;
+    });
+
+    res.json(entry);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/audio-dictionary/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid audio phrase id' });
+
+  try {
+    await prisma.audioPhrase.delete({ where: { id } });
+    res.json({ ok: true });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

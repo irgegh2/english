@@ -279,7 +279,7 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange,
 
             <div className="voice-settings-note">
               <AudioLines size={18} />
-              <div><strong>Озвучка берётся только из загруженных аудиофайлов.</strong><span>Для каждого задания в админке можно загрузить отдельный файл для каждого из шести голосов. Если файла нет — звук не запускается.</span></div>
+              <div><strong>Озвучка берётся из общего аудиословаря.</strong><span>Урок хранит только английскую фразу, а запись автоматически подставляется из словаря для выбранного голоса. Если записи нет — кнопка прослушивания не показывается.</span></div>
             </div>
 
             <div className="voice-groups">
@@ -594,7 +594,7 @@ function installGlobalClickSound() {
 }
 
 function getScreenAudio(screen, presetId) {
-  return screen?.audioFiles?.[presetId] || '';
+  return screen?.resolvedAudioFiles?.[presetId] || screen?.audioFiles?.[presetId] || '';
 }
 
 function playLessonAudio(url) {
@@ -615,15 +615,16 @@ function playLessonAudio(url) {
 }
 
 function LessonAudioButton({ url, large = false, label = 'Послушать' }) {
+  if (!url) return null;
+
   return (
     <button
       className={large ? 'lesson-listen-big' : 'lesson-audio-btn'}
       onClick={() => playLessonAudio(url)}
-      disabled={!url}
-      title={url ? label : 'Аудио для выбранного голоса пока не загружено'}
+      title={label}
     >
       <Volume2 size={large ? 28 : 20} />
-      <span>{url ? label : 'Аудио не загружено'}</span>
+      <span>{label}</span>
     </button>
   );
 }
