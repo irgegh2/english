@@ -225,6 +225,14 @@ const normalizeLibraryKey = value => asString(value)
 const normalizeAudioPhrase = normalizeLibraryKey;
 const normalizeMediaName = normalizeLibraryKey;
 
+const expandReusableAudioPhrase = value => {
+  const phrase = asString(value).trim();
+  if (!phrase) return [];
+  const parts = phrase.split(/\s*[—–-]\s*/).map(part => part.trim()).filter(Boolean);
+  if (parts.length > 1 && parts.every(part => /^[A-Za-z]$/.test(part))) return parts;
+  return [phrase];
+};
+
 const sanitizeAudioFiles = value => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const files = {};
@@ -243,9 +251,9 @@ async function hydrateLessonContent(lesson) {
 
   const phraseKeys = [...new Set(
     screens.flatMap(screen => [
-      normalizeAudioPhrase(screen?.audioPhrase),
+      ...expandReusableAudioPhrase(screen?.audioPhrase).map(phrase => normalizeAudioPhrase(phrase)),
       ...(Array.isArray(screen?.audioPhrases)
-        ? screen.audioPhrases.map(phrase => normalizeAudioPhrase(phrase))
+        ? screen.audioPhrases.flatMap(phrase => expandReusableAudioPhrase(phrase).map(part => normalizeAudioPhrase(part)))
         : []),
     ]).filter(Boolean)
   )];
@@ -282,13 +290,15 @@ async function hydrateLessonContent(lesson) {
         if (resolvedAudioFiles) next.resolvedAudioFiles = resolvedAudioFiles;
 
         if (Array.isArray(screen?.audioPhrases) && screen.audioPhrases.length) {
-          next.resolvedAudioSequence = screen.audioPhrases.map(phrase => {
-            const key = normalizeAudioPhrase(phrase);
-            return {
-              phrase,
-              audioFiles: key ? (audioByKey.get(key) || {}) : {},
-            };
-          });
+          next.resolvedAudioSequence = screen.audioPhrases.flatMap(phrase =>
+            expandReusableAudioPhrase(phrase).map(part => {
+              const key = normalizeAudioPhrase(part);
+              return {
+                phrase: part,
+                audioFiles: key ? (audioByKey.get(key) || {}) : {},
+              };
+            })
+          );
         }
 
         const mediaId = Number(screen?.mediaId);
