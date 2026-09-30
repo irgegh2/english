@@ -10,6 +10,7 @@ import {
 import './styles.css';
 import { ASSETS } from './assets.js';
 import AdminApp from './admin.jsx';
+import { END_SOUND_DATA_URL } from './end-sound.js';
 
 const fallbackLessons = [
   { id: 1, position: 1, title: 'Как строить фразы', tagPrimary: 'грамматика', tagSecondary: 'говорение', description: 'Учимся собирать простые и естественные фразы для повседневного общения.', progress: 100, duration: 18, imageKey: 'lesson-1.webp' },
@@ -469,82 +470,111 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 
 let activeLessonAudio = null;
 
-const UI_SOUND_VERSION = '20260930-3';
+const LESSON_TEST_MODE = import.meta.env.DEV;
+const UI_SOUND_VERSION = '20260930-4';
 const UI_SOUNDS = {
   click: { url: `/assets/sounds/mclick.mp3?v=${UI_SOUND_VERSION}`, volume: 0.42 },
   success: { url: `/assets/sounds/success.mp3?v=${UI_SOUND_VERSION}`, volume: 0.72 },
   error: { url: `/assets/sounds/error.mp3?v=${UI_SOUND_VERSION}`, volume: 0.72 },
-  end: { url: `/assets/sounds/end.mp3?v=${UI_SOUND_VERSION}`, volume: 0.86 },
+  end: { url: END_SOUND_DATA_URL, volume: 0.86 },
 };
 
-const uiAudioPools = new Map();
+let uiAudioContext = null;
+const uiAudioBuffers = new Map();
+const uiAudioLoads = new Map();
 
-function getUiSoundPool(name) {
-  if (typeof window === 'undefined') return [];
-  if (uiAudioPools.has(name)) return uiAudioPools.get(name);
+function getUiAudioContext() {
+  if (typeof window === 'undefined') return null;
+  if (uiAudioContext?.state === 'closed') {
+    uiAudioContext = null;
+    uiAudioBuffers.clear();
+    uiAudioLoads.clear();
+  }
 
-  const config = UI_SOUNDS[name];
-  if (!config) return [];
-
-  const size = name === 'click' ? 5 : 2;
-  const pool = Array.from({ length: size }, () => {
-    const audio = new Audio(config.url);
-    audio.preload = 'auto';
-    audio.volume = config.volume;
-    audio.load();
-    return audio;
-  });
-
-  uiAudioPools.set(name, pool);
-  return pool;
+  if (!uiAudioContext) {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return null;
+    uiAudioContext = new AudioContextCtor({ latencyHint: 'interactive' });
+  }
+  return uiAudioContext;
 }
 
-function playUiSound(name) {
+async function loadUiSound(name) {
   const config = UI_SOUNDS[name];
-  if (!config || typeof window === 'undefined') return false;
+  const context = getUiAudioContext();
+  if (!config || !context) return null;
+  if (uiAudioBuffers.has(name)) return uiAudioBuffers.get(name);
+  if (uiAudioLoads.has(name)) return uiAudioLoads.get(name);
 
-  const pool = getUiSoundPool(name);
-  const audio = pool.find(item => item.paused || item.ended) || pool[0];
-  if (!audio) return false;
+  const loading = (async () => {
+    const response = await fetch(config.url);
+    if (!response.ok) throw new Error(`Could not load ${name} sound`);
+    const data = await response.arrayBuffer();
+    const buffer = await context.decodeAudioData(data.slice(0));
+    uiAudioBuffers.set(name, buffer);
+    return buffer;
+  })().catch(error => {
+    console.warn(`UI sound preload failed: ${name}`, error);
+    return null;
+  }).finally(() => {
+    uiAudioLoads.delete(name);
+  });
+
+  uiAudioLoads.set(name, loading);
+  return loading;
+}
+
+function startUiBuffer(name, buffer) {
+  const config = UI_SOUNDS[name];
+  const context = getUiAudioContext();
+  if (!config || !context || !buffer || context.state !== 'running') return false;
 
   try {
-    audio.pause();
-    audio.currentTime = 0;
-    audio.volume = config.volume;
-    const promise = audio.play();
-    if (promise?.catch) {
-      promise.catch(error => console.warn(`UI sound ${name} failed:`, error));
-    }
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    source.buffer = buffer;
+    gain.gain.value = config.volume;
+    source.connect(gain);
+    gain.connect(context.destination);
+    source.start(0);
     return true;
   } catch (error) {
-    console.warn(`UI sound ${name} failed:`, error);
+    console.warn(`UI sound start failed: ${name}`, error);
     return false;
   }
 }
 
-function playUiSoundFallback(name) {
-  const config = UI_SOUNDS[name];
-  if (!config || typeof window === 'undefined') return;
+function playUiSound(name) {
+  const context = getUiAudioContext();
+  if (!context) return false;
 
-  try {
-    const audio = new Audio(config.url);
-    audio.preload = 'auto';
-    audio.volume = config.volume;
-    void audio.play().catch(() => {});
-  } catch {}
-}
+  const playLoaded = () => {
+    const buffer = uiAudioBuffers.get(name);
+    if (buffer) return startUiBuffer(name, buffer);
 
-function playUiSoundImmediate(name) {
-  return playUiSound(name);
+    void loadUiSound(name).then(loaded => {
+      if (!loaded) return;
+      if (context.state === 'running') startUiBuffer(name, loaded);
+    });
+    return false;
+  };
+
+  if (context.state === 'running') return playLoaded();
+
+  void context.resume().then(() => playLoaded()).catch(() => {});
+  return false;
 }
 
 function preloadUiSounds() {
   if (typeof window === 'undefined') return;
-  Object.keys(UI_SOUNDS).forEach(name => {
-    getUiSoundPool(name).forEach(audio => {
-      try { audio.load(); } catch {}
-    });
-  });
+  getUiAudioContext();
+  Object.keys(UI_SOUNDS).forEach(name => { void loadUiSound(name); });
+}
+
+function unlockUiAudio() {
+  const context = getUiAudioContext();
+  if (!context || context.state === 'running') return;
+  void context.resume().catch(() => {});
 }
 
 function installUiAudioLifecycle() {
@@ -552,9 +582,13 @@ function installUiAudioLifecycle() {
   window.__skladnoAudioLifecycleInstalled = true;
 
   const restore = () => {
-    if (document.visibilityState === 'visible') preloadUiSounds();
+    if (document.visibilityState !== 'visible') return;
+    unlockUiAudio();
+    preloadUiSounds();
   };
 
+  document.addEventListener('pointerdown', unlockUiAudio, { capture: true, passive: true });
+  document.addEventListener('keydown', unlockUiAudio, { capture: true });
   document.addEventListener('visibilitychange', restore);
   window.addEventListener('focus', restore);
   window.addEventListener('pageshow', restore);
@@ -569,7 +603,7 @@ function installGlobalClickSound() {
     const control = target?.closest('button, a, [role="button"], label.admin-upload-btn');
     if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true') return;
     if (control.dataset.uiClick === 'off' || control.closest('[data-ui-click="off"]')) return;
-    void playUiSound('click');
+    playUiSound('click');
   }, true);
 }
 
@@ -889,10 +923,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     onProgress(progress);
     if (step >= screens.length - 1) {
       completionSoundPlayedRef.current = true;
-      const started = playUiSoundImmediate('end');
-      if (!started) {
-        playUiSoundFallback('end');
-      }
+      playUiSound('end');
       setFinished(true);
       return;
     }
@@ -1175,6 +1206,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-step-copy">
           <span>Урок</span>
           <strong>{step + 1} / {screens.length}</strong>
+          {LESSON_TEST_MODE && <b className="lesson-test-badge">ТЕСТ</b>}
           <em><Volume2 size={14} /> {getVoicePreset(voicePreset).name}</em>
         </div>
 
@@ -1193,7 +1225,23 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
       <div className={`lesson-runner-footer ${confirmation.status !== 'idle' ? `feedback-${confirmation.status}` : ''}`}>
         <button className="lesson-secondary-action" onClick={previous} disabled={step === 0}>Назад</button>
-        {isCheckable && confirmation.status !== 'correct' ? (
+
+        {LESSON_TEST_MODE ? (
+          <div className="lesson-test-actions">
+            {isCheckable && selectionReady && confirmation.status === 'idle' && (
+              <button className="lesson-test-check" data-ui-click="off" onClick={confirmAnswer}>
+                Проверить <Check size={17} />
+              </button>
+            )}
+            <button
+              className="lesson-primary-action"
+              data-ui-click={step === screens.length - 1 ? 'off' : undefined}
+              onClick={next}
+            >
+              {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={19} />
+            </button>
+          </div>
+        ) : isCheckable && confirmation.status !== 'correct' ? (
           <button
             className="lesson-primary-action lesson-confirm-action"
             data-ui-click="off"
