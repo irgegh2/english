@@ -3,7 +3,6 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import path from 'node:path';
-import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { S3Client, PutObjectCommand, DeleteObjectCommand, HeadBucketCommand } from '@aws-sdk/client-s3';
@@ -12,13 +11,8 @@ const prisma = new PrismaClient();
 const app = express();
 const port = Number(process.env.PORT || 8787);
 
-const uploadRoot = path.resolve(process.cwd(), 'public/uploads');
-fs.mkdirSync(path.join(uploadRoot, 'audio'), { recursive: true });
-fs.mkdirSync(path.join(uploadRoot, 'images'), { recursive: true });
-
 app.use(cors());
 app.use(express.json({ limit: '8mb' }));
-app.use('/uploads', express.static(uploadRoot));
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -183,28 +177,6 @@ async function uploadFileToStorage(kind, file) {
   };
 }
 
-function localUploadAbsolutePath(url) {
-  if (!String(url || '').startsWith('/uploads/')) return null;
-  const relative = String(url).replace(/^\/uploads\//, '');
-  const absolute = path.resolve(uploadRoot, relative);
-  return absolute.startsWith(uploadRoot) ? absolute : null;
-}
-
-async function migrateOneLocalUpload(url) {
-  const absolute = localUploadAbsolutePath(url);
-  if (!absolute || !fs.existsSync(absolute)) return null;
-  const relative = path.relative(uploadRoot, absolute);
-  const kind = relative.startsWith(`images${path.sep}`) ? 'image' : 'audio';
-  const buffer = await fs.promises.readFile(absolute);
-  const stored = await uploadBufferToStorage({
-    kind,
-    buffer,
-    originalName: path.basename(absolute),
-    mimeType: kind === 'image' ? 'image/*' : 'audio/*',
-  });
-  return stored.url;
-}
-
 async function deleteStorageUrl(url) {
   const settings = await getStorageSettings();
   const endpoint = String(settings.endpoint || '').replace(/\/+$/, '');
@@ -220,17 +192,6 @@ async function deleteStorageUrl(url) {
 
 async function cleanupMediaUrl(url) {
   if (!url) return false;
-
-  const absolute = localUploadAbsolutePath(url);
-  if (absolute) {
-    try {
-      await fs.promises.unlink(absolute);
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-    return true;
-  }
-
   return deleteStorageUrl(url);
 }
 
@@ -238,7 +199,7 @@ async function cleanupMediaUrlQuietly(url) {
   try {
     await cleanupMediaUrl(url);
   } catch (error) {
-    console.warn('Failed to remove old media object:', error.message);
+    console.warn('Failed to remove S3 media object:', error.message);
   }
 }
 
@@ -610,84 +571,64 @@ app.post('/api/admin/storage-settings/test', async (_req, res) => {
   }
 });
 
-app.post('/api/admin/storage-settings/migrate-local-uploads', async (_req, res) => {
+app.get('/api/admin/storage-settings/cloud-only-status', async (_req, res) => {
   try {
-    const migrated = new Map();
-    const resolveUrl = async url => {
-      if (!String(url || '').startsWith('/uploads/')) return url;
-      if (migrated.has(url)) return migrated.get(url);
-      const next = await migrateOneLocalUpload(url);
-      if (!next) return url;
-      migrated.set(url, next);
-      return next;
-    };
+    const [voices, phrases, assets, lessons] = await Promise.all([
+      prisma.voiceProfile.findMany({ select: { id: true, previewUrl: true } }),
+      prisma.audioPhrase.findMany({ select: { id: true, text: true, audioFiles: true } }),
+      prisma.mediaAsset.findMany({ select: { id: true, name: true, url: true } }),
+      prisma.lesson.findMany({ select: { id: true, title: true, content: true } }),
+    ]);
 
-    const voices = await prisma.voiceProfile.findMany();
+    const references = [];
+
     for (const voice of voices) {
-      if (!voice.previewUrl?.startsWith('/uploads/')) continue;
-      await prisma.voiceProfile.update({
-        where: { id: voice.id },
-        data: { previewUrl: await resolveUrl(voice.previewUrl) },
-      });
+      if (voice.previewUrl?.startsWith('/uploads/')) {
+        references.push({ type: 'voice', id: voice.id, label: voice.id, url: voice.previewUrl });
+      }
     }
 
-    const audioPhrases = await prisma.audioPhrase.findMany();
-    for (const phrase of audioPhrases) {
+    for (const phrase of phrases) {
       const audioFiles = sanitizeAudioFiles(phrase.audioFiles);
-      let changed = false;
-      for (const voiceId of Object.keys(audioFiles)) {
-        if (!audioFiles[voiceId]?.startsWith('/uploads/')) continue;
-        audioFiles[voiceId] = await resolveUrl(audioFiles[voiceId]);
-        changed = true;
-      }
-      if (changed) {
-        await prisma.audioPhrase.update({ where: { id: phrase.id }, data: { audioFiles } });
+      for (const [voiceId, url] of Object.entries(audioFiles)) {
+        if (url?.startsWith('/uploads/')) {
+          references.push({ type: 'audioPhrase', id: phrase.id, label: `${phrase.text} / ${voiceId}`, url });
+        }
       }
     }
 
-    const mediaAssets = await prisma.mediaAsset.findMany();
-    for (const asset of mediaAssets) {
-      if (!asset.url?.startsWith('/uploads/')) continue;
-      await prisma.mediaAsset.update({
-        where: { id: asset.id },
-        data: { url: await resolveUrl(asset.url) },
+    for (const asset of assets) {
+      if (asset.url?.startsWith('/uploads/')) {
+        references.push({ type: 'mediaAsset', id: asset.id, label: asset.name, url: asset.url });
+      }
+    }
+
+    for (const lesson of lessons) {
+      const screens = lesson.content && typeof lesson.content === 'object' && Array.isArray(lesson.content.screens)
+        ? lesson.content.screens
+        : [];
+      screens.forEach((screen, index) => {
+        if (screen?.imageUrl?.startsWith('/uploads/')) {
+          references.push({ type: 'lessonImage', id: lesson.id, label: `${lesson.title} / экран ${index + 1}`, url: screen.imageUrl });
+        }
+        if (screen?.audioFiles && typeof screen.audioFiles === 'object') {
+          for (const [voiceId, url] of Object.entries(screen.audioFiles)) {
+            if (String(url || '').startsWith('/uploads/')) {
+              references.push({ type: 'lessonAudio', id: lesson.id, label: `${lesson.title} / экран ${index + 1} / ${voiceId}`, url });
+            }
+          }
+        }
       });
     }
 
-    const lessons = await prisma.lesson.findMany({ select: { id: true, content: true } });
-    for (const lesson of lessons) {
-      const content = lesson.content;
-      if (!content || typeof content !== 'object' || !Array.isArray(content.screens)) continue;
-      let changed = false;
-      const screens = [];
-      for (const screen of content.screens) {
-        const next = { ...screen };
-        if (next.imageUrl?.startsWith('/uploads/')) {
-          next.imageUrl = await resolveUrl(next.imageUrl);
-          changed = true;
-        }
-        if (next.audioFiles && typeof next.audioFiles === 'object') {
-          const audioFiles = { ...next.audioFiles };
-          for (const voiceId of Object.keys(audioFiles)) {
-            if (!audioFiles[voiceId]?.startsWith('/uploads/')) continue;
-            audioFiles[voiceId] = await resolveUrl(audioFiles[voiceId]);
-            changed = true;
-          }
-          next.audioFiles = audioFiles;
-        }
-        screens.push(next);
-      }
-      if (changed) {
-        await prisma.lesson.update({
-          where: { id: lesson.id },
-          data: { content: { ...content, screens } },
-        });
-      }
-    }
-
-    res.json({ ok: true, migrated: migrated.size });
+    res.json({
+      ok: references.length === 0,
+      localReferenceCount: references.length,
+      references,
+      database: safeDatabaseInfo(),
+    });
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1149,9 +1090,11 @@ app.delete('/api/admin/media', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'Media URL is required' });
 
   try {
-    const local = Boolean(localUploadAbsolutePath(url));
+    if (url.startsWith('/uploads/')) {
+      return res.status(409).json({ error: 'Локальные /uploads отключены. Эта ссылка должна быть перенесена в S3.' });
+    }
     const deleted = await cleanupMediaUrl(url);
-    res.json({ ok: true, storage: local ? 'local' : deleted ? 's3' : 'external' });
+    res.json({ ok: true, storage: deleted ? 's3' : 'external' });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

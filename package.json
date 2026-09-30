@@ -14,7 +14,8 @@
     "db:seed": "node prisma/seed.js",
     "setup:mac": "bash scripts/setup-mac.sh",
     "db:repair": "node prisma/seed.js --repair",
-    "db:migrate:reg": "bash scripts/migrate-to-reg-cloud.sh"
+    "db:migrate:reg": "bash scripts/migrate-to-reg-cloud.sh",
+    "cleanup:local-cloud": "node scripts/cleanup-local-after-cloud.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
