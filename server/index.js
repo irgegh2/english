@@ -320,14 +320,14 @@ function collectScreenAutoAudioTexts(screen) {
 function collectScreenAutoMediaKeys(screen) {
   const values = [
     screen?.mediaKey,
-    screen?.scene,
     screen?.phrase,
+    screen?.scene,
     screen?.title,
     screen?.imageKey,
   ];
 
   for (const item of screen?.items || []) {
-    values.push(item?.mediaKey, item?.scene, item?.answer, item?.imageKey);
+    values.push(item?.mediaKey, item?.answer, item?.scene, item?.imageKey);
   }
 
   return [...new Set(
@@ -446,8 +446,8 @@ async function hydrateLessonsContent(lessons = []) {
           const explicitMedia = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
           const automaticMedia = explicitMedia || resolveMediaByValues(mediaByKey, [
             screen?.mediaKey,
-            screen?.scene,
             screen?.phrase,
+            screen?.scene,
             screen?.title,
             screen?.imageKey,
           ]);
@@ -463,8 +463,8 @@ async function hydrateLessonsContent(lessons = []) {
               const explicitItemMedia = Number.isInteger(itemMediaId) ? mediaById.get(itemMediaId) : null;
               const automaticItemMedia = explicitItemMedia || resolveMediaByValues(mediaByKey, [
                 item?.mediaKey,
-                item?.scene,
                 item?.answer,
+                item?.scene,
                 item?.imageKey,
               ]);
               return automaticItemMedia
