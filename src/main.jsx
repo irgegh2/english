@@ -841,7 +841,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     <section className="lesson-runner">
       <div className="lesson-runner-top">
         <button className="lesson-exit-btn" onClick={onExit}><ChevronLeft size={18} /> К урокам</button>
-        <div className="lesson-step-copy"><span>Урок {lesson.position}</span><strong>{step + 1} / {screens.length}</strong></div>
+        <div className="lesson-step-copy"><span>Урок {lesson.position}</span><strong>{step + 1} / {screens.length}</strong><em><Volume2 size={12} /> {getVoicePreset(voicePreset).name}</em></div>
         <div className="lesson-screen-progress"><i style={{ width: `${((step + 1) / screens.length) * 100}%` }} /></div>
       </div>
 
