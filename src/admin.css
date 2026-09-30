@@ -1381,3 +1381,34 @@ body{margin:0}
 .admin-storage-migrate{
   background:#315f68;
 }
+
+.admin-storage-db-grid{
+  margin-top:10px;
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:8px;
+}
+.admin-storage-db-grid>span{
+  min-width:0;
+  padding:10px;
+  border:1px solid #dce6e3;
+  border-radius:10px;
+  background:#fafcfb;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+.admin-storage-db-grid small{
+  font-size:7.5px;
+  color:#8b999c;
+}
+.admin-storage-db-grid strong{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:9px;
+  color:#36545d;
+}
+@media(max-width:800px){
+  .admin-storage-db-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
