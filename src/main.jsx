@@ -291,6 +291,7 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange,
                       <button
                         className={`voice-card voice-card-button ${voice.id === voicePreset ? 'selected' : ''}`}
                         key={voice.id}
+                        data-ui-click="off"
                         onClick={() => {
                           onVoiceChange(voice.id);
                           if (voice.previewUrl) playLessonAudio(voice.previewUrl);
