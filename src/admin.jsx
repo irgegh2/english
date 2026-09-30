@@ -100,7 +100,7 @@ const findAudioDictionaryEntry = (audioDictionary, value) => {
 
 const findAutomaticMedia = (mediaLibrary, screen) => {
   if (screen?.mediaId || screen?.imageUrl) return null;
-  const candidates = [screen?.mediaKey, screen?.scene, screen?.phrase, screen?.title, screen?.imageKey]
+  const candidates = [screen?.mediaKey, screen?.phrase, screen?.scene, screen?.title, screen?.imageKey]
     .map(normalizeAutoMediaKey)
     .filter(Boolean);
   return mediaLibrary.find(item => candidates.includes(normalizeAutoMediaKey(item.name))) || null;
