@@ -3824,3 +3824,44 @@ body.lesson-scroll-locked{
   outline:3px solid rgba(33,185,167,.18);
   outline-offset:2px;
 }
+
+
+/* ===== Restore compact voice-card geometry ===== */
+.voice-card-button{
+  display:block;
+  width:100%;
+  padding:8px;
+  border:1px solid #e0e8e5;
+  border-radius:15px;
+  background:#fff;
+  box-shadow:none;
+  text-align:left;
+  line-height:normal;
+}
+.voice-card-button:hover{
+  border-color:#c2ddd6;
+  background:#fff;
+  box-shadow:0 7px 18px rgba(26,73,73,.05);
+}
+.voice-card-button.selected{
+  border-color:#8fd4c9;
+  background:#f3fbf8;
+  box-shadow:0 0 0 2px rgba(39,190,171,.08);
+}
+.voice-card-button .voice-select{
+  display:grid;
+  width:100%;
+  min-height:54px;
+  grid-template-columns:36px minmax(0,1fr) 22px;
+  gap:9px;
+  align-items:center;
+  padding:4px;
+}
+.voice-card-button .voice-sample-text{
+  display:block;
+  margin:2px 3px 0;
+  min-height:28px;
+}
+.voice-card-audio-state{
+  display:none !important;
+}
