@@ -3776,3 +3776,18 @@ body.lesson-scroll-locked{
 @media(max-height:860px){
   .lesson-test-check{min-height:40px}
 }
+
+
+.lesson-test-sound{
+  width:44px;
+  height:34px;
+  border:1px solid #ead98f;
+  border-radius:10px;
+  background:#fff7d7;
+  color:#866817;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.06em;
+  cursor:pointer;
+}
+.lesson-test-sound:hover{background:#ffefb8}
