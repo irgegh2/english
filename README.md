@@ -105,7 +105,7 @@ npm run db:migrate:reg
 Предзаполнены:
 
 - endpoint: `https://s3.regru.cloud`;
-- bucket: `английский`.
+- bucket: `angliskii`.
 
 Project ID, Access Key ID и **Secret Access Key** вводятся в админке. Credential-данные намеренно не зашиваются в исходный код и не коммитятся в Git. Он никогда не возвращается обратно в браузер после сохранения.
 
