@@ -4065,3 +4065,32 @@ body.lesson-scroll-locked{
   font-size:12px;
   line-height:1.45;
 }
+
+
+.lesson-session-stats{
+  width:min(620px,100%);
+  margin:16px auto 4px;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+}
+.lesson-session-stats>div{
+  padding:11px;
+  border:1px solid #d8e6e2;
+  border-radius:12px;
+  background:#f7fbfa;
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+}
+.lesson-session-stats strong{
+  font-size:18px;
+  color:#0e8176;
+}
+.lesson-session-stats span{
+  font-size:10px;
+  color:#73878b;
+}
+@media(max-width:620px){
+  .lesson-session-stats{grid-template-columns:1fr}
+}
