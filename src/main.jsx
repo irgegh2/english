@@ -781,6 +781,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [confirmation, setConfirmation] = useState({ status: 'idle' });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const lessonRunnerRef = useRef(null);
+  const completionSoundPlayedRef = useRef(false);
 
   const screen = screens[step];
   const screenAudio = getScreenAudio(screen, voicePreset);
@@ -792,6 +793,18 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     setSpoken({});
     setConfirmation({ status: 'idle' });
   }, [step]);
+
+  useEffect(() => {
+    if (!finished) {
+      completionSoundPlayedRef.current = false;
+      return;
+    }
+
+    if (!completionSoundPlayedRef.current) {
+      completionSoundPlayedRef.current = true;
+      void playUiSound('end');
+    }
+  }, [finished]);
 
   useEffect(() => {
     const syncFullscreen = () => {
@@ -867,7 +880,6 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     const progress = Math.round(((step + 1) / screens.length) * 100);
     onProgress(progress);
     if (step >= screens.length - 1) {
-      playUiSound('end');
       setFinished(true);
       return;
     }
