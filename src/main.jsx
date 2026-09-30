@@ -668,8 +668,27 @@ function installGlobalClickSound() {
   }, { capture: true, passive: true });
 }
 
+function normalizeAutoMediaKey(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/[.!?…,:;]+$/u, '')
+    .trim()
+    .toLocaleLowerCase('en-US')
+    .replace(/\s+/g, ' ');
+}
+
 function getScreenAudio(screen, presetId) {
-  return screen?.resolvedAudioFiles?.[presetId] || screen?.audioFiles?.[presetId] || '';
+  return screen?.audioFiles?.[presetId] || screen?.resolvedAudioFiles?.[presetId] || '';
+}
+
+function getTextAudio(screen, text, presetId) {
+  const key = normalizeAutoMediaKey(text);
+  return key ? (screen?.resolvedAudioByText?.[key]?.[presetId] || '') : '';
+}
+
+function playTextAudio(screen, text, presetId) {
+  return playLessonAudio(getTextAudio(screen, text, presetId));
 }
 
 function getScreenAudioSequence(screen, presetId) {
@@ -871,7 +890,7 @@ function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule
   );
 }
 
-function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false, locked = false }) {
+function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false, locked = false, getOptionAudio }) {
   return (
     <div className="lesson-options">
       {options.map(option => {
@@ -879,15 +898,22 @@ function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false,
         const isCorrect = confirmed && isSelected && option === answer;
         const isWrong = confirmed && isSelected && option !== answer;
         const stateClass = isCorrect ? 'correct' : isWrong ? 'wrong' : isSelected ? 'selected' : '';
+        const optionAudio = getOptionAudio?.(option) || '';
 
         return (
           <button
             key={option}
             className={stateClass}
-            onClick={() => !locked && onSelect(option)}
+            data-ui-click={optionAudio ? 'off' : undefined}
+            onClick={() => {
+              if (locked) return;
+              if (optionAudio) playLessonAudio(optionAudio);
+              onSelect(option);
+            }}
             disabled={locked}
           >
             <span>{option}</span>
+            {optionAudio && <Volume2 size={15} className="lesson-option-audio-icon" />}
             {isCorrect && <Check size={18} />}
           </button>
         );
@@ -1079,7 +1105,7 @@ function inferSpecExpectedText(screen) {
   return '';
 }
 
-function MultiSelectOptions({ options, answers = [], selected = [], onSelect, confirmed = false, locked = false }) {
+function MultiSelectOptions({ options, answers = [], selected = [], onSelect, confirmed = false, locked = false, getOptionAudio }) {
   const selectedValues = Array.isArray(selected) ? selected : [];
 
   return (
@@ -1092,12 +1118,16 @@ function MultiSelectOptions({ options, answers = [], selected = [], onSelect, co
         const isMissed = confirmed && !isSelected && shouldBeSelected;
         const stateClass = isCorrect ? 'correct' : isWrong || isMissed ? 'wrong' : isSelected ? 'selected' : '';
 
+        const optionAudio = getOptionAudio?.(option) || '';
+
         return (
           <button
             key={option}
             className={stateClass}
+            data-ui-click={optionAudio ? 'off' : undefined}
             onClick={() => {
               if (locked) return;
+              if (optionAudio) playLessonAudio(optionAudio);
               const next = isSelected
                 ? selectedValues.filter(value => value !== option)
                 : [...selectedValues, option];
@@ -1106,6 +1136,7 @@ function MultiSelectOptions({ options, answers = [], selected = [], onSelect, co
             disabled={locked}
           >
             <span>{option}</span>
+            {optionAudio && <Volume2 size={15} className="lesson-option-audio-icon" />}
             {isSelected && <Check size={18} />}
           </button>
         );
