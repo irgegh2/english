@@ -3587,3 +3587,139 @@ svg{stroke-width:1.8}
   min-height:38px;
   font-size:10px;
 }
+
+
+/* ===== Lesson completion celebration ===== */
+.lesson-finished{
+  position:relative;
+  overflow:hidden;
+  isolation:isolate;
+  background:
+    radial-gradient(circle at 50% 36%,rgba(189,245,226,.48),transparent 26%),
+    linear-gradient(180deg,#ffffff 0%,#f5fbf9 100%) !important;
+}
+.lesson-finish-content{
+  position:relative;
+  z-index:2;
+  width:min(680px,100%);
+  margin:auto;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  animation:lesson-finish-content-in 560ms cubic-bezier(.16,.84,.32,1) both;
+}
+.lesson-finish-icon{
+  position:relative;
+  width:82px !important;
+  height:82px !important;
+  margin:0 auto 18px !important;
+  border-radius:26px !important;
+  background:linear-gradient(145deg,#d9f8ef,#c8f3e5) !important;
+  color:#078a7d !important;
+  box-shadow:
+    0 16px 36px rgba(23,145,128,.16),
+    inset 0 0 0 1px rgba(52,181,159,.16);
+  animation:lesson-finish-icon-pop 720ms cubic-bezier(.16,1.28,.3,1) 80ms both;
+}
+.lesson-finish-icon:after{
+  content:"";
+  position:absolute;
+  inset:-11px;
+  border:2px solid rgba(43,198,174,.18);
+  border-radius:31px;
+  animation:lesson-finish-ring 900ms ease-out 120ms both;
+}
+.lesson-finished .lesson-eyebrow{
+  animation:lesson-finish-up 420ms ease-out 180ms both;
+}
+.lesson-finished h1{
+  margin:9px 0 9px !important;
+  font-size:clamp(36px,3.2vw,50px) !important;
+  animation:lesson-finish-up 460ms ease-out 230ms both;
+}
+.lesson-finished .lesson-finish-content>p{
+  animation:lesson-finish-up 460ms ease-out 285ms both;
+}
+.lesson-finished .lesson-outcomes{
+  animation:lesson-finish-up 480ms ease-out 330ms both;
+}
+.lesson-finished .lesson-outcomes>div{
+  opacity:0;
+  transform:translateY(8px);
+  animation:lesson-finish-outcome 380ms ease-out calc(390ms + var(--outcome-index) * 70ms) forwards;
+}
+.lesson-finish-action{
+  margin-top:2px;
+  animation:lesson-finish-up 430ms ease-out 760ms both;
+}
+.lesson-finish-burst{
+  position:absolute;
+  z-index:1;
+  inset:0;
+  pointer-events:none;
+}
+.lesson-finish-burst i{
+  --angle:calc(var(--burst-index) * 30deg);
+  position:absolute;
+  left:50%;
+  top:33%;
+  width:9px;
+  height:18px;
+  border-radius:5px;
+  background:#2bc9b3;
+  opacity:0;
+  transform:
+    translate(-50%,-50%)
+    rotate(var(--angle))
+    translateY(-22px)
+    scale(.45);
+  transform-origin:50% 120px;
+  animation:lesson-finish-particle 900ms cubic-bezier(.12,.75,.25,1) calc(var(--burst-index) * 14ms) both;
+}
+.lesson-finish-burst i:nth-child(3n+2){background:#b8ed68;width:8px;height:14px}
+.lesson-finish-burst i:nth-child(3n){background:#ffd66d;width:7px;height:12px}
+
+@keyframes lesson-finish-content-in{
+  from{opacity:0;transform:translateY(14px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes lesson-finish-icon-pop{
+  0%{opacity:0;transform:scale(.45) rotate(-10deg)}
+  62%{opacity:1;transform:scale(1.13) rotate(3deg)}
+  100%{opacity:1;transform:scale(1) rotate(0)}
+}
+@keyframes lesson-finish-ring{
+  0%{opacity:0;transform:scale(.65)}
+  35%{opacity:1}
+  100%{opacity:0;transform:scale(1.45)}
+}
+@keyframes lesson-finish-up{
+  from{opacity:0;transform:translateY(9px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes lesson-finish-outcome{
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes lesson-finish-particle{
+  0%{opacity:0;transform:translate(-50%,-50%) rotate(var(--angle)) translateY(-20px) scale(.3)}
+  18%{opacity:1}
+  100%{opacity:0;transform:translate(-50%,-50%) rotate(var(--angle)) translateY(-145px) scale(1)}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .lesson-finish-content,
+  .lesson-finish-icon,
+  .lesson-finish-icon:after,
+  .lesson-finished .lesson-eyebrow,
+  .lesson-finished h1,
+  .lesson-finished .lesson-finish-content>p,
+  .lesson-finished .lesson-outcomes,
+  .lesson-finished .lesson-outcomes>div,
+  .lesson-finish-action,
+  .lesson-finish-burst i{
+    animation:none !important;
+    opacity:1 !important;
+    transform:none !important;
+  }
+}
