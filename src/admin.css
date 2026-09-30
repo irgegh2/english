@@ -1452,3 +1452,46 @@ body{margin:0}
 .admin-audio-sequence-status .ready span{
   color:#0b8175;
 }
+
+
+.admin-listening-fallback{
+  margin:10px 0 12px;
+  padding:10px 12px;
+  border:1px solid #ead2cd;
+  border-radius:10px;
+  background:#fff7f4;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.admin-listening-fallback.ready{
+  border-color:#c5e4da;
+  background:#f0faf7;
+}
+.admin-listening-fallback>div{
+  min-width:0;
+  display:grid;
+  gap:3px;
+}
+.admin-listening-fallback strong{
+  font-size:9px;
+  color:#365760;
+}
+.admin-listening-fallback span{
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  font-size:8px;
+  color:#6d8287;
+}
+.admin-listening-fallback em{
+  flex:0 0 auto;
+  font-style:normal;
+  font-size:8px;
+  font-weight:800;
+  color:#a45e52;
+}
+.admin-listening-fallback.ready em{
+  color:#0b8175;
+}
