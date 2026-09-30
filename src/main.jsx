@@ -1157,7 +1157,15 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   if (!screen) return null;
 
-  const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type);
+  const specQuestions = screen.type === 'specTask' ? (screen.questions || []) : [];
+  const specPairs = screen.type === 'specTask' ? (screen.pairs || []) : [];
+  const specMode = screen.type === 'specTask' ? (screen.mode || 'info') : '';
+  const specCheckable = screen.type === 'specTask' && (
+    (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length > 0) ||
+    (['match', 'classify'].includes(specMode) && specPairs.length > 0) ||
+    (specMode === 'order' && (screen.tokens || []).length > 0 && (screen.orderAnswer || []).length > 0)
+  );
+  const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type) || specCheckable;
 
   const clearConfirmation = () => {
     if (confirmation.status !== 'idle') setConfirmation({ status: 'idle' });
@@ -1181,6 +1189,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') return allMultiAnswered(screen.items || []);
     if (screen.type === 'classify') return allMultiAnswered(screen.items || []);
     if (screen.type === 'order') return ordered.length === (screen.answer || []).length;
+    if (screen.type === 'specTask') {
+      if (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length) return allMultiAnswered(specQuestions);
+      if (['match', 'classify'].includes(specMode) && specPairs.length) return specPairs.every((_, index) => Boolean(answers[index]));
+      if (specMode === 'order') return ordered.length === (screen.orderAnswer || []).length;
+    }
     return true;
   })();
 
@@ -1189,6 +1202,13 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (screen.type === 'multiChoice' || screen.type === 'listeningDialog') return allMultiCorrect(screen.items || []);
     if (screen.type === 'classify') return (screen.items || []).every((item, index) => answers[index] === item.answer);
     if (screen.type === 'order') return ordered.join(' ') === (screen.answer || []).join(' ');
+    if (screen.type === 'specTask') {
+      if (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length) return allMultiCorrect(specQuestions);
+      if (['match', 'classify'].includes(specMode) && specPairs.length) {
+        return specPairs.every((pair, index) => answers[index] === pair.slice(1).join(' → '));
+      }
+      if (specMode === 'order') return ordered.join(' | ') === (screen.orderAnswer || []).join(' | ');
+    }
     return true;
   })();
 
@@ -1197,6 +1217,8 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (['intro', 'flashcard'].includes(screen.type)) return true;
     if (screen.type === 'pronunciation') return (screen.phrases || []).every((_, index) => repeated[index]);
     if (screen.type === 'speakingFinal') return (screen.items || []).every((_, index) => spoken[index]);
+    if (screen.type === 'specTask' && specMode === 'speaking') return Boolean(spoken[0]);
+    if (screen.type === 'specTask' && specMode === 'text') return Boolean(String(answers.text || '').trim());
     return true;
   })();
 
@@ -1282,6 +1304,24 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   }
 
   const renderScreen = () => {
+    if (screen.type === 'specTask') {
+      return (
+        <SpecTaskScreen
+          screen={screen}
+          voicePreset={voicePreset}
+          answers={answers}
+          setAnswer={setAnswer}
+          ordered={ordered}
+          setOrder={setOrder}
+          repeated={repeated}
+          setRepeated={setRepeated}
+          spoken={spoken}
+          setSpoken={setSpoken}
+          confirmation={confirmation}
+        />
+      );
+    }
+
     if (screen.type === 'intro') {
       return (
         <div className="lesson-intro-layout">
@@ -1486,11 +1526,15 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   const lessonPercent = Math.round(((step + 1) / screens.length) * 100);
   const itemCount = Array.isArray(screen.items) ? screen.items.length : 0;
+  const specDensity = screen.type === 'specTask'
+    ? Math.max((screen.questions || []).length, (screen.pairs || []).length, (screen.body || []).length)
+    : 0;
   const isDenseScreen =
     (['multiChoice', 'listeningDialog'].includes(screen.type) && itemCount >= 4) ||
     (screen.type === 'classify' && itemCount >= 5) ||
     (screen.type === 'pronunciation' && (screen.phrases || []).length >= 5) ||
-    (screen.type === 'speakingFinal' && itemCount >= 4);
+    (screen.type === 'speakingFinal' && itemCount >= 4) ||
+    (screen.type === 'specTask' && specDensity >= 8);
 
   return (
     <section className="lesson-runner" ref={lessonRunnerRef}>
