@@ -252,35 +252,148 @@ function lessonScreens(lesson) {
     : [];
 }
 
+const stripAudioPunctuation = value => asString(value)
+  .trim()
+  .replace(/[.!?…,:;]+$/u, '')
+  .trim();
+
+const audioLookupKeys = value => {
+  const exact = normalizeAudioPhrase(value);
+  const stripped = normalizeAudioPhrase(stripAudioPunctuation(value));
+  return [...new Set([exact, stripped].filter(Boolean))];
+};
+
+const looksLikeEnglishAudio = value => {
+  const text = asString(value).trim();
+  return Boolean(text) && text.length <= 180 && /[A-Za-z]/.test(text);
+};
+
+const pushAudioCandidate = (list, value) => {
+  const text = asString(value).trim();
+  if (looksLikeEnglishAudio(text)) list.push(text);
+};
+
+function collectScreenAutoAudioTexts(screen) {
+  const texts = [];
+  pushAudioCandidate(texts, screen?.audio);
+  pushAudioCandidate(texts, screen?.phrase);
+  pushAudioCandidate(texts, screen?.reply);
+  pushAudioCandidate(texts, screen?.prompt);
+  pushAudioCandidate(texts, screen?.focus);
+
+  for (const option of screen?.options || []) pushAudioCandidate(texts, option);
+  for (const token of screen?.tokens || []) pushAudioCandidate(texts, token);
+  for (const phrase of screen?.phrases || []) pushAudioCandidate(texts, phrase);
+  for (const answer of screen?.answer || []) pushAudioCandidate(texts, answer);
+  if (Array.isArray(screen?.answer) && screen.answer.length > 1) {
+    pushAudioCandidate(texts, screen.answer.join(' '));
+  }
+  if (Array.isArray(screen?.orderAnswer) && screen.orderAnswer.length > 1) {
+    for (const token of screen.orderAnswer) pushAudioCandidate(texts, token);
+    pushAudioCandidate(texts, screen.orderAnswer.join(' '));
+  }
+
+  for (const item of screen?.items || []) {
+    pushAudioCandidate(texts, item?.text);
+    for (const option of item?.options || []) pushAudioCandidate(texts, option);
+    for (const answer of item?.answers || []) pushAudioCandidate(texts, answer);
+  }
+
+  for (const question of screen?.questions || []) {
+    for (const option of question?.options || []) pushAudioCandidate(texts, option);
+    pushAudioCandidate(texts, question?.answer);
+    for (const answer of question?.answers || []) pushAudioCandidate(texts, answer);
+  }
+
+  for (const pair of screen?.pairs || []) {
+    for (const part of Array.isArray(pair) ? pair : []) pushAudioCandidate(texts, part);
+  }
+
+  return [...new Set(texts)];
+}
+
+function collectScreenAutoMediaKeys(screen) {
+  const values = [
+    screen?.mediaKey,
+    screen?.scene,
+    screen?.phrase,
+    screen?.imageKey,
+  ];
+
+  for (const item of screen?.items || []) {
+    values.push(item?.mediaKey, item?.scene, item?.imageKey);
+  }
+
+  return [...new Set(
+    values
+      .map(value => normalizeMediaName(value))
+      .filter(Boolean)
+  )];
+}
+
+function resolveAudioForText(audioByKey, value) {
+  for (const key of audioLookupKeys(value)) {
+    const files = audioByKey.get(key);
+    if (files && Object.keys(files).length) return files;
+  }
+  return null;
+}
+
+function resolveMediaByValues(mediaByKey, values = []) {
+  for (const value of values) {
+    const key = normalizeMediaName(value);
+    if (!key) continue;
+    const media = mediaByKey.get(key);
+    if (media) return media;
+  }
+  return null;
+}
+
 async function hydrateLessonsContent(lessons = []) {
   if (!lessons.length) return [];
 
   const phraseKeys = [...new Set(
     lessons.flatMap(lesson => lessonScreens(lesson).flatMap(screen => [
-      ...expandReusableAudioPhrase(screen?.audioPhrase).map(phrase => normalizeAudioPhrase(phrase)),
+      ...expandReusableAudioPhrase(screen?.audioPhrase).flatMap(audioLookupKeys),
       ...(Array.isArray(screen?.audioPhrases)
-        ? screen.audioPhrases.flatMap(phrase => expandReusableAudioPhrase(phrase).map(part => normalizeAudioPhrase(part)))
+        ? screen.audioPhrases.flatMap(phrase => expandReusableAudioPhrase(phrase).flatMap(audioLookupKeys))
         : []),
+      ...collectScreenAutoAudioTexts(screen).flatMap(audioLookupKeys),
     ])).filter(Boolean)
   )];
 
   const mediaIds = [...new Set(
     lessons.flatMap(lesson => lessonScreens(lesson)
-      .map(screen => Number(screen?.mediaId))
+      .flatMap(screen => [
+        Number(screen?.mediaId),
+        ...(screen?.items || []).map(item => Number(item?.mediaId)),
+      ])
       .filter(Number.isInteger))
+  )];
+
+  const mediaKeys = [...new Set(
+    lessons.flatMap(lesson => lessonScreens(lesson).flatMap(collectScreenAutoMediaKeys))
   )];
 
   const [audioEntries, mediaEntries] = await Promise.all([
     phraseKeys.length
       ? prisma.audioPhrase.findMany({ where: { key: { in: phraseKeys } } })
       : [],
-    mediaIds.length
-      ? prisma.mediaAsset.findMany({ where: { id: { in: mediaIds } } })
+    mediaIds.length || mediaKeys.length
+      ? prisma.mediaAsset.findMany({
+          where: {
+            OR: [
+              ...(mediaIds.length ? [{ id: { in: mediaIds } }] : []),
+              ...(mediaKeys.length ? [{ key: { in: mediaKeys } }] : []),
+            ],
+          },
+        })
       : [],
   ]);
 
   const audioByKey = new Map(audioEntries.map(entry => [entry.key, sanitizeAudioFiles(entry.audioFiles)]));
   const mediaById = new Map(mediaEntries.map(entry => [entry.id, entry]));
+  const mediaByKey = new Map(mediaEntries.map(entry => [entry.key, entry]));
 
   return lessons.map(lesson => {
     const content = lesson?.content;
@@ -294,27 +407,59 @@ async function hydrateLessonsContent(lessons = []) {
         screens: screens.map(screen => {
           const next = { ...screen };
 
-          const phraseKey = normalizeAudioPhrase(screen?.audioPhrase);
-          const resolvedAudioFiles = phraseKey ? audioByKey.get(phraseKey) : null;
+          const resolvedAudioFiles = screen?.audioPhrase
+            ? resolveAudioForText(audioByKey, screen.audioPhrase)
+            : null;
           if (resolvedAudioFiles) next.resolvedAudioFiles = resolvedAudioFiles;
 
           if (Array.isArray(screen?.audioPhrases) && screen.audioPhrases.length) {
             next.resolvedAudioSequence = screen.audioPhrases.flatMap(phrase =>
-              expandReusableAudioPhrase(phrase).map(part => {
-                const key = normalizeAudioPhrase(part);
-                return {
-                  phrase: part,
-                  audioFiles: key ? (audioByKey.get(key) || {}) : {},
-                };
-              })
+              expandReusableAudioPhrase(phrase).map(part => ({
+                phrase: part,
+                audioFiles: resolveAudioForText(audioByKey, part) || {},
+              }))
             );
           }
 
+          const autoAudio = {};
+          for (const text of collectScreenAutoAudioTexts(screen)) {
+            const files = resolveAudioForText(audioByKey, text);
+            if (files) autoAudio[normalizeAudioPhrase(stripAudioPunctuation(text))] = files;
+          }
+          if (Object.keys(autoAudio).length) next.resolvedAudioByText = autoAudio;
+
           const mediaId = Number(screen?.mediaId);
-          const media = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
-          if (media) {
-            next.resolvedImageUrl = media.url;
-            next.resolvedImageName = media.name;
+          const explicitMedia = Number.isInteger(mediaId) ? mediaById.get(mediaId) : null;
+          const automaticMedia = explicitMedia || resolveMediaByValues(mediaByKey, [
+            screen?.mediaKey,
+            screen?.scene,
+            screen?.phrase,
+            screen?.imageKey,
+          ]);
+          if (automaticMedia) {
+            next.resolvedImageUrl = automaticMedia.url;
+            next.resolvedImageName = automaticMedia.name;
+            next.resolvedImageAuto = !explicitMedia;
+          }
+
+          if (Array.isArray(screen?.items) && screen.items.length) {
+            next.items = screen.items.map(item => {
+              const itemMediaId = Number(item?.mediaId);
+              const explicitItemMedia = Number.isInteger(itemMediaId) ? mediaById.get(itemMediaId) : null;
+              const automaticItemMedia = explicitItemMedia || resolveMediaByValues(mediaByKey, [
+                item?.mediaKey,
+                item?.scene,
+                item?.imageKey,
+              ]);
+              return automaticItemMedia
+                ? {
+                    ...item,
+                    resolvedImageUrl: automaticItemMedia.url,
+                    resolvedImageName: automaticItemMedia.name,
+                    resolvedImageAuto: !explicitItemMedia,
+                  }
+                : item;
+            });
           }
 
           return next;
