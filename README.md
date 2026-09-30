@@ -105,10 +105,9 @@ npm run db:migrate:reg
 Предзаполнены:
 
 - endpoint: `https://s3.regru.cloud`;
-- bucket: `английский`;
-- Project ID и Access Key ID из текущего проекта REG.RU.
+- bucket: `английский`.
 
-Вручную вводится только **Secret Access Key**. Он никогда не возвращается обратно в браузер после сохранения.
+Project ID, Access Key ID и **Secret Access Key** вводятся в админке. Credential-данные намеренно не зашиваются в исходный код и не коммитятся в Git. Он никогда не возвращается обратно в браузер после сохранения.
 
 Secret Access Key хранится в таблице `StorageSettings` в PostgreSQL в зашифрованном AES-256-GCM виде. Ключ расшифровки `STORAGE_MASTER_KEY` находится только в локальном/серверном `.env`, поэтому дамп базы сам по себе не содержит пригодного к использованию S3-секрета.
 
