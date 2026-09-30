@@ -37,16 +37,44 @@ const normalizeLibraryText = value => String(value || '')
   .replace(/\s+/g, ' ');
 const normalizeAudioPhrase = normalizeLibraryText;
 
+const wait = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+
 const api = async (url, options = {}) => {
-  const response = await fetch(url, {
-    ...options,
-    headers: options.body instanceof FormData
-      ? options.headers
-      : { 'Content-Type': 'application/json', ...(options.headers || {}) },
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Ошибка запроса');
-  return data;
+  const method = String(options.method || 'GET').toUpperCase();
+  const attempts = method === 'GET' ? 5 : 1;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers: options.body instanceof FormData
+          ? options.headers
+          : { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (response.ok) return data;
+
+      const retryableStartupError = method === 'GET'
+        && response.status >= 500
+        && !data.error
+        && attempt < attempts - 1;
+
+      if (retryableStartupError) {
+        await wait(250 * (attempt + 1));
+        continue;
+      }
+
+      throw new Error(data.error || `Ошибка запроса (${response.status})`);
+    } catch (error) {
+      lastError = error;
+      if (method !== 'GET' || attempt >= attempts - 1) break;
+      await wait(250 * (attempt + 1));
+    }
+  }
+
+  throw lastError || new Error('API недоступен');
 };
 
 const createScreen = (type = 'choice') => {
