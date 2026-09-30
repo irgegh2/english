@@ -46,7 +46,7 @@ model CourseBlock {
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
-  @@unique([blockId, position])
+  @@unique([moduleId, position])
 }
 
 model Lesson {
@@ -69,5 +69,5 @@ model Lesson {
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
-  @@unique([moduleId, position])
+  @@unique([blockId, position])
 }
