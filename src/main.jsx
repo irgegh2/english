@@ -470,61 +470,93 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 let activeLessonAudio = null;
 
 const UI_SOUNDS = {
-  click: { url: '/assets/sounds/mclick.mp3', volume: 0.38 },
-  success: { url: '/assets/sounds/success.mp3', volume: 0.62 },
-  error: { url: '/assets/sounds/error.mp3', volume: 0.62 },
-  end: { url: '/assets/sounds/end.mp3', volume: 0.72 },
+  click: { url: '/assets/sounds/mclick.mp3', volume: 0.42 },
+  success: { url: '/assets/sounds/success.mp3', volume: 0.72 },
+  error: { url: '/assets/sounds/error.mp3', volume: 0.72 },
+  end: { url: '/assets/sounds/end.mp3', volume: 0.78 },
 };
 
-const uiSoundPools = {};
+let uiAudioContext = null;
+const uiAudioBuffers = new Map();
+const uiAudioLoads = new Map();
 
-function getUiSoundPool(name) {
-  if (typeof window === 'undefined') return [];
-  if (uiSoundPools[name]) return uiSoundPools[name];
-
-  const config = UI_SOUNDS[name];
-  if (!config) return [];
-
-  const size = name === 'click' ? 5 : 2;
-  uiSoundPools[name] = Array.from({ length: size }, () => {
-    const audio = new Audio(config.url);
-    audio.preload = 'auto';
-    audio.volume = config.volume;
-    return audio;
-  });
-  return uiSoundPools[name];
+function getUiAudioContext() {
+  if (typeof window === 'undefined') return null;
+  if (!uiAudioContext) {
+    const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextCtor) return null;
+    uiAudioContext = new AudioContextCtor({ latencyHint: 'interactive' });
+  }
+  return uiAudioContext;
 }
 
-function playUiSound(name) {
+async function loadUiSound(name) {
   const config = UI_SOUNDS[name];
-  if (!config || typeof window === 'undefined') return;
+  if (!config) return null;
+  if (uiAudioBuffers.has(name)) return uiAudioBuffers.get(name);
+  if (uiAudioLoads.has(name)) return uiAudioLoads.get(name);
 
-  const pool = getUiSoundPool(name);
-  const audio = pool.find(item => item.paused || item.ended) || pool[0];
-  if (!audio) return;
+  const promise = (async () => {
+    const context = getUiAudioContext();
+    if (!context) return null;
 
-  try {
-    audio.pause();
-    audio.currentTime = 0;
-    audio.volume = config.volume;
-    void audio.play();
-  } catch {}
+    const response = await fetch(config.url, { cache: 'force-cache' });
+    if (!response.ok) throw new Error(`Failed to load UI sound: ${name}`);
+    const data = await response.arrayBuffer();
+    const buffer = await context.decodeAudioData(data.slice(0));
+    uiAudioBuffers.set(name, buffer);
+    return buffer;
+  })().catch(() => null).finally(() => uiAudioLoads.delete(name));
+
+  uiAudioLoads.set(name, promise);
+  return promise;
+}
+
+async function playUiSound(name) {
+  const config = UI_SOUNDS[name];
+  const context = getUiAudioContext();
+  if (!config || !context) return;
+
+  if (context.state === 'suspended') {
+    try { await context.resume(); } catch {}
+  }
+
+  const buffer = uiAudioBuffers.get(name) || await loadUiSound(name);
+  if (!buffer) return;
+
+  const source = context.createBufferSource();
+  const gain = context.createGain();
+  source.buffer = buffer;
+  gain.gain.value = config.volume;
+  source.connect(gain);
+  gain.connect(context.destination);
+  source.start(0);
 }
 
 function preloadUiSounds() {
   if (typeof window === 'undefined') return;
-  Object.keys(UI_SOUNDS).forEach(name => getUiSoundPool(name).forEach(audio => audio.load()));
+  getUiAudioContext();
+  Object.keys(UI_SOUNDS).forEach(name => { void loadUiSound(name); });
+}
+
+function unlockUiAudio() {
+  const context = getUiAudioContext();
+  if (!context || context.state !== 'suspended') return;
+  void context.resume();
 }
 
 function installGlobalClickSound() {
   if (typeof document === 'undefined' || window.__skladnoClickSoundInstalled) return;
   window.__skladnoClickSoundInstalled = true;
 
+  document.addEventListener('pointerdown', unlockUiAudio, { capture: true, passive: true });
+
   document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
     const control = target?.closest('button, a, [role="button"], label.admin-upload-btn');
     if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true') return;
-    playUiSound('click');
+    if (control.dataset.uiClick === 'off' || control.closest('[data-ui-click="off"]')) return;
+    void playUiSound('click');
   }, true);
 }
 
@@ -1086,13 +1118,19 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         {isCheckable && confirmation.status !== 'correct' ? (
           <button
             className="lesson-primary-action lesson-confirm-action"
+            data-ui-click="off"
             onClick={confirmAnswer}
             disabled={!selectionReady || confirmation.status === 'wrong'}
           >
             {confirmation.status === 'wrong' ? 'Измени ответ' : 'Подтвердить'} <Check size={19} />
           </button>
         ) : (
-          <button className="lesson-primary-action" onClick={next} disabled={!complete}>
+          <button
+            className="lesson-primary-action"
+            data-ui-click={step === screens.length - 1 ? 'off' : undefined}
+            onClick={next}
+            disabled={!complete}
+          >
             {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={19} />
           </button>
         )}
