@@ -4,7 +4,7 @@ import {
   Activity, ArrowRight, AudioLines, Bell, BookOpen, Bookmark, CalendarDays, Camera,
   Check, ChevronDown, ChevronLeft, CircleAlert, CircleUserRound, Clock3, Compass, Flame,
   GraduationCap, Grid2X2, Headphones, Heart, Home, Layers3, LibraryBig,
-  MessageCircle, Mic2, Play, RotateCcw, Search, Settings2, Share2, Sparkles,
+  Maximize2, MessageCircle, Mic2, Minimize2, Play, RotateCcw, Search, Settings2, Share2, Sparkles,
   Star, Trophy, UserRound, Users, Volume2, WandSparkles, Zap
 } from 'lucide-react';
 import './styles.css';
@@ -633,6 +633,8 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [repeated, setRepeated] = useState({});
   const [spoken, setSpoken] = useState({});
   const [finished, setFinished] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const lessonRunnerRef = useRef(null);
 
   const screen = screens[step];
   const screenAudio = getScreenAudio(screen, voicePreset);
@@ -643,6 +645,19 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     setRepeated({});
     setSpoken({});
   }, [step]);
+
+  useEffect(() => {
+    const syncFullscreen = () => {
+      const active = document.fullscreenElement || document.webkitFullscreenElement;
+      setIsFullscreen(active === lessonRunnerRef.current);
+    };
+    document.addEventListener('fullscreenchange', syncFullscreen);
+    document.addEventListener('webkitfullscreenchange', syncFullscreen);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncFullscreen);
+      document.removeEventListener('webkitfullscreenchange', syncFullscreen);
+    };
+  }, []);
 
   if (!screen) return null;
 
@@ -674,9 +689,38 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     if (step > 0) setStep(current => current - 1);
   };
 
+  const toggleFullscreen = async () => {
+    const element = lessonRunnerRef.current;
+    if (!element) return;
+
+    const active = document.fullscreenElement || document.webkitFullscreenElement;
+    try {
+      if (!active) {
+        const request = element.requestFullscreen || element.webkitRequestFullscreen;
+        if (request) await request.call(element);
+      } else {
+        const exit = document.exitFullscreen || document.webkitExitFullscreen;
+        if (exit) await exit.call(document);
+      }
+    } catch {
+      // Fullscreen can be blocked by browser permissions; the lesson remains usable.
+    }
+  };
+
+  const exitLesson = async () => {
+    const active = document.fullscreenElement || document.webkitFullscreenElement;
+    if (active === lessonRunnerRef.current) {
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) {
+        try { await exit.call(document); } catch {}
+      }
+    }
+    onExit();
+  };
+
   if (finished) {
     return (
-      <section className="lesson-runner lesson-finished">
+      <section className="lesson-runner lesson-finished" ref={lessonRunnerRef}>
         <div className="lesson-finish-icon"><Check size={34} /></div>
         <span className="lesson-eyebrow">Урок завершён</span>
         <h1>Hello! — готово</h1>
@@ -684,7 +728,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-outcomes">
           {(lesson.content?.outcomes || []).slice(0, 5).map(item => <div key={item}><Check size={15} />{item}</div>)}
         </div>
-        <button className="lesson-primary-action" onClick={onExit}>Вернуться к урокам <ArrowRight size={17} /></button>
+        <button className="lesson-primary-action" onClick={exitLesson}>Вернуться к урокам <ArrowRight size={17} /></button>
       </section>
     );
   }
@@ -867,12 +911,26 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     return null;
   };
 
+  const lessonPercent = Math.round(((step + 1) / screens.length) * 100);
+
   return (
-    <section className="lesson-runner">
+    <section className="lesson-runner" ref={lessonRunnerRef}>
       <div className="lesson-runner-top">
-        <button className="lesson-exit-btn" onClick={onExit}><ChevronLeft size={18} /> К урокам</button>
-        <div className="lesson-step-copy"><span>Урок {lesson.position}</span><strong>{step + 1} / {screens.length}</strong><em><Volume2 size={12} /> {getVoicePreset(voicePreset).name}</em></div>
-        <div className="lesson-screen-progress"><i style={{ width: `${((step + 1) / screens.length) * 100}%` }} /></div>
+        <button className="lesson-exit-btn" onClick={exitLesson}><ChevronLeft size={19} /> <span>К урокам</span></button>
+
+        <div className="lesson-step-copy">
+          <span>Урок</span>
+          <strong>{step + 1} / {screens.length}</strong>
+          <em><Volume2 size={14} /> {getVoicePreset(voicePreset).name}</em>
+        </div>
+
+        <div className="lesson-progress-area">
+          <div className="lesson-screen-progress"><i style={{ width: `${lessonPercent}%` }} /></div>
+          <strong>{lessonPercent}%</strong>
+          <button className="lesson-fullscreen-btn" onClick={toggleFullscreen} title={isFullscreen ? 'Выйти из полного экрана' : 'На весь экран'}>
+            {isFullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+        </div>
       </div>
 
       <div className="lesson-stage" key={screen.id}>
@@ -882,7 +940,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       <div className="lesson-runner-footer">
         <button className="lesson-secondary-action" onClick={previous} disabled={step === 0}>Назад</button>
         <button className="lesson-primary-action" onClick={next} disabled={!complete}>
-          {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={17} />
+          {step === screens.length - 1 ? 'Завершить урок' : 'Дальше'} <ArrowRight size={19} />
         </button>
       </div>
     </section>
