@@ -13,9 +13,13 @@ const voiceProfiles = [
   { id: 'theo', position: 6, name: 'Theo', gender: 'Мужской', note: 'быстрый · разговорный', sampleText: "Hi! I'm Theo. This is my voice." },
 ];
 
-await prisma.lesson.deleteMany();
-await prisma.courseBlock.deleteMany();
-await prisma.courseModule.deleteMany();
+const repairMode = process.argv.includes('--repair');
+
+if (!repairMode) {
+  await prisma.lesson.deleteMany();
+  await prisma.courseBlock.deleteMany();
+  await prisma.courseModule.deleteMany();
+}
 
 await prisma.profile.upsert({
   where: { id: 1 },
@@ -37,53 +41,103 @@ for (const voice of voiceProfiles) {
 }
 
 for (const m of course) {
-  const moduleRecord = await prisma.courseModule.create({
-    data: {
-      position: m.p,
-      title: m.t,
-      shortTitle: m.t,
-      description: m.t,
-      level: m.l,
-      progress: m.p <= 6 ? 100 : 0,
-    },
-  });
+  let moduleRecord;
 
-  const createdBlocks = [];
-  for (const [index, title] of m.b.entries()) {
-    const block = await prisma.courseBlock.create({
+  if (repairMode) {
+    moduleRecord = await prisma.courseModule.findUnique({ where: { position: m.p } });
+    if (!moduleRecord) {
+      moduleRecord = await prisma.courseModule.create({
+        data: {
+          position: m.p,
+          title: m.t,
+          shortTitle: m.t,
+          description: m.t,
+          level: m.l,
+          progress: m.p <= 6 ? 100 : 0,
+        },
+      });
+    }
+  } else {
+    moduleRecord = await prisma.courseModule.create({
       data: {
-        moduleId: moduleRecord.id,
-        position: index + 1,
-        title,
-        imageKey: 'lesson-1.webp',
+        position: m.p,
+        title: m.t,
+        shortTitle: m.t,
+        description: m.t,
+        level: m.l,
         progress: m.p <= 6 ? 100 : 0,
       },
     });
+  }
+
+  const createdBlocks = [];
+  for (const [index, title] of m.b.entries()) {
+    const position = index + 1;
+    let block;
+
+    if (repairMode) {
+      block = await prisma.courseBlock.findFirst({
+        where: { moduleId: moduleRecord.id, position },
+      });
+
+      if (!block) {
+        block = await prisma.courseBlock.create({
+          data: {
+            moduleId: moduleRecord.id,
+            position,
+            title,
+            imageKey: 'lesson-1.webp',
+            progress: m.p <= 6 ? 100 : 0,
+          },
+        });
+      }
+    } else {
+      block = await prisma.courseBlock.create({
+        data: {
+          moduleId: moduleRecord.id,
+          position,
+          title,
+          imageKey: 'lesson-1.webp',
+          progress: m.p <= 6 ? 100 : 0,
+        },
+      });
+    }
+
     createdBlocks.push(block);
   }
 
   if (m.p === 1 && createdBlocks[0]) {
     for (const lesson of blockOneLessons) {
-      await prisma.lesson.create({
-        data: {
-          moduleId: moduleRecord.id,
-          blockId: createdBlocks[0].id,
-          position: lesson.position,
-          title: lesson.title,
-          tagPrimary: lesson.tagPrimary,
-          tagSecondary: lesson.tagSecondary,
-          description: lesson.description,
-          objective: lesson.objective,
-          status: lesson.status,
-          content: lesson.content,
-          progress: 0,
-          duration: lesson.duration,
-          imageKey: lesson.imageKey,
-        },
-      });
+      const existingLesson = repairMode
+        ? await prisma.lesson.findFirst({
+            where: { blockId: createdBlocks[0].id, position: lesson.position },
+          })
+        : null;
+
+      if (!existingLesson) {
+        await prisma.lesson.create({
+          data: {
+            moduleId: moduleRecord.id,
+            blockId: createdBlocks[0].id,
+            position: lesson.position,
+            title: lesson.title,
+            tagPrimary: lesson.tagPrimary,
+            tagSecondary: lesson.tagSecondary,
+            description: lesson.description,
+            objective: lesson.objective,
+            status: lesson.status,
+            content: lesson.content,
+            progress: 0,
+            duration: lesson.duration,
+            imageKey: lesson.imageKey,
+          },
+        });
+      }
     }
   }
 }
 
 await prisma.$disconnect();
-console.log(`Seed complete: ${course.length} modules, ${course.reduce((sum, item) => sum + item.b.length, 0)} blocks, ${blockOneLessons.length} lessons in Module 1 / Block 1.`);
+console.log(repairMode
+  ? `Repair complete: ensured ${course.length} modules and ${course.reduce((sum, item) => sum + item.b.length, 0)} blocks without deleting existing course data.`
+  : `Seed complete: ${course.length} modules, ${course.reduce((sum, item) => sum + item.b.length, 0)} blocks, ${blockOneLessons.length} lessons in Module 1 / Block 1.`);
