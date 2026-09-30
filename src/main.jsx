@@ -304,10 +304,6 @@ function Topbar({ profile, section, onSectionChange, voicePreset, onVoiceChange,
                           <span className="voice-radio">{voice.id === voicePreset && <Check size={13} />}</span>
                         </span>
                         {voice.sampleText && <span className="voice-sample-text">“{voice.sampleText}”</span>}
-                        <span className="voice-card-audio-state">
-                          <Volume2 size={15} />
-                          {voice.previewUrl ? 'Нажми, чтобы выбрать и услышать' : 'Демо пока не загружено'}
-                        </span>
                       </button>
                     ))}
                   </div>
@@ -485,6 +481,7 @@ const UI_SOUNDS = {
 };
 
 const uiAudioPools = new Map();
+let uiSoundsPrimed = false;
 
 function createUiAudio(config) {
   const audio = new Audio();
@@ -529,6 +526,42 @@ function playUiSound(name) {
   }
 }
 
+function primeUiSounds() {
+  if (uiSoundsPrimed || typeof window === 'undefined') return;
+  uiSoundsPrimed = true;
+
+  Object.keys(UI_SOUNDS).forEach(name => {
+    getUiSoundPool(name).forEach(audio => {
+      try {
+        const previousMuted = audio.muted;
+        const previousVolume = audio.volume;
+        audio.muted = true;
+        audio.volume = 0;
+        audio.currentTime = 0;
+
+        const stop = () => {
+          try {
+            audio.pause();
+            audio.currentTime = 0;
+            audio.muted = previousMuted;
+            audio.volume = previousVolume;
+          } catch {}
+        };
+
+        const promise = audio.play();
+        if (promise?.then) {
+          promise.then(() => window.setTimeout(stop, 35)).catch(() => {
+            audio.muted = previousMuted;
+            audio.volume = previousVolume;
+          });
+        } else {
+          window.setTimeout(stop, 35);
+        }
+      } catch {}
+    });
+  });
+}
+
 function preloadUiSounds() {
   if (typeof window === 'undefined') return;
   Object.keys(UI_SOUNDS).forEach(name => {
@@ -538,6 +571,8 @@ function preloadUiSounds() {
       }
     });
   });
+
+  window.setTimeout(primeUiSounds, 0);
 }
 
 function installUiAudioLifecycle() {
@@ -559,6 +594,7 @@ function installGlobalClickSound() {
 
   document.addEventListener('pointerdown', event => {
     if (event.button !== undefined && event.button !== 0) return;
+    primeUiSounds();
     const target = event.target instanceof Element ? event.target : null;
     const control = target?.closest('button, a, [role="button"], label.admin-upload-btn');
     if (!control || control.matches(':disabled') || control.getAttribute('aria-disabled') === 'true') return;
