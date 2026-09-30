@@ -84,6 +84,22 @@ async function getStorageSettings() {
   });
 }
 
+function safeDatabaseInfo() {
+  try {
+    const url = new URL(process.env.DATABASE_URL || '');
+    return {
+      host: url.hostname,
+      port: url.port || '5432',
+      database: url.pathname.replace(/^\//, ''),
+      user: decodeURIComponent(url.username || ''),
+      sslmode: url.searchParams.get('sslmode') || '',
+      cloud: url.hostname === '79.174.89.45' && (url.port || '5432') === '19538',
+    };
+  } catch {
+    return { host: '', port: '', database: '', user: '', sslmode: '', cloud: false };
+  }
+}
+
 function serializeStorageSettings(settings) {
   return {
     id: settings.id,
@@ -95,6 +111,7 @@ function serializeStorageSettings(settings) {
     accessKeyId: settings.accessKeyId,
     hasSecretAccessKey: Boolean(settings.secretAccessKeyEncrypted),
     encryptionReady: Boolean(storageEncryptionKey()),
+    database: safeDatabaseInfo(),
     updatedAt: settings.updatedAt,
   };
 }
