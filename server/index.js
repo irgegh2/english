@@ -281,7 +281,6 @@ const pushAudioCandidate = (list, value) => {
 
 function collectScreenAutoAudioTexts(screen) {
   const texts = [];
-  pushAudioCandidate(texts, screen?.audio);
   pushAudioCandidate(texts, screen?.phrase);
   pushAudioCandidate(texts, screen?.reply);
   pushAudioCandidate(texts, screen?.prompt);
