@@ -3735,3 +3735,44 @@ body.lesson-scroll-locked{
 body.lesson-scroll-locked{
   touch-action:none;
 }
+
+
+/* ===== Temporary lesson test controls ===== */
+.lesson-test-badge{
+  min-height:24px;
+  padding:0 8px;
+  border-radius:999px;
+  background:#fff3cd;
+  border:1px solid #ecd98e;
+  color:#8b6b16;
+  display:inline-flex;
+  align-items:center;
+  font-size:8px;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.lesson-test-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+.lesson-test-check{
+  min-height:46px;
+  border:1px solid #bee4dc;
+  border-radius:13px;
+  background:#eef9f6;
+  color:#0b8478;
+  padding:0 16px;
+  display:flex;
+  align-items:center;
+  gap:7px;
+  font-size:10px;
+  font-weight:800;
+  cursor:pointer;
+}
+.lesson-test-check:hover{
+  background:#e3f6f1;
+}
+@media(max-height:860px){
+  .lesson-test-check{min-height:40px}
+}
