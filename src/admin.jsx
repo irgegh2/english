@@ -423,8 +423,101 @@ function SaveStatus({ state }) {
   return <span className="admin-save-state saved"><Check size={15} /> Всё сохранено</span>;
 }
 
+function VoiceAdminPanel({ voices, setVoices, loading, onSaveState }) {
+  const updateVoice = async (id, patch) => {
+    const current = voices.find(voice => voice.id === id);
+    if (!current) return;
+
+    const optimistic = { ...current, ...patch };
+    setVoices(list => list.map(voice => voice.id === id ? optimistic : voice));
+    onSaveState('saving');
+
+    try {
+      const updated = await api(`/api/admin/voices/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      });
+      setVoices(list => list.map(voice => voice.id === id ? updated : voice));
+      onSaveState('saved');
+    } catch (error) {
+      setVoices(list => list.map(voice => voice.id === id ? current : voice));
+      onSaveState('error');
+      window.alert(error.message);
+    }
+  };
+
+  if (loading) {
+    return <div className="admin-loading"><Loader2 className="spin" /> Загружаем голоса…</div>;
+  }
+
+  return (
+    <div className="admin-voices-page">
+      <div className="admin-editor-head">
+        <div className="admin-editor-heading">
+          <div className="admin-editor-path">Настройки озвучки</div>
+          <h1>Голоса курса</h1>
+          <p>Для каждого голоса загрузи короткую английскую демо-фразу. Именно её пользователь услышит при выборе голоса в профиле.</p>
+        </div>
+      </div>
+
+      <section className="admin-voice-help">
+        <Volume2 size={20} />
+        <div>
+          <strong>Рекомендуемый формат фразы</strong>
+          <span><code>Hi! I'm Ella. This is my voice.</code> — коротко, естественно и одинаково по смыслу для всех шести голосов.</span>
+        </div>
+      </section>
+
+      <div className="admin-voice-cards">
+        {voices.map(voice => (
+          <article className="admin-voice-card" key={voice.id}>
+            <div className="admin-voice-card-head">
+              <span className="admin-voice-avatar">{voice.name?.[0] || '?'}</span>
+              <div>
+                <strong>{voice.name}</strong>
+                <span>{voice.gender} · {voice.note}</span>
+              </div>
+              <span className={`admin-voice-file-state ${voice.previewUrl ? 'ready' : ''}`}>
+                {voice.previewUrl ? 'Демо загружено' : 'Нет демо'}
+              </span>
+            </div>
+
+            <Field label="Текст демо-фразы" wide hint="Фраза должна быть на английском. Это подпись и ориентир для записи.">
+              <TextArea
+                rows={3}
+                value={voice.sampleText || ''}
+                onChange={value => setVoices(list => list.map(item => item.id === voice.id ? { ...item, sampleText: value } : item))}
+                onBlur={() => updateVoice(voice.id, { sampleText: voices.find(item => item.id === voice.id)?.sampleText || '' })}
+              />
+            </Field>
+
+            <MediaUploader
+              kind="audio"
+              label={`Демо голоса ${voice.name}`}
+              value={voice.previewUrl || ''}
+              onChange={url => updateVoice(voice.id, { previewUrl: url || null })}
+            />
+
+            {voice.previewUrl && (
+              <button className="admin-voice-preview-btn" onClick={() => {
+                const audio = new Audio(voice.previewUrl);
+                audio.play().catch(() => {});
+              }}>
+                <Volume2 size={17} /> Послушать демо
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AdminApp() {
+  const [adminSection, setAdminSection] = useState('course');
   const [tree, setTree] = useState([]);
+  const [voices, setVoices] = useState([]);
+  const [voicesLoading, setVoicesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saveState, setSaveState] = useState('saved');
   const [selectedModuleId, setSelectedModuleId] = useState(null);
@@ -457,7 +550,24 @@ function AdminApp() {
     }
   };
 
-  useEffect(() => { void loadTree(); }, []);
+  const loadVoices = async () => {
+    setVoicesLoading(true);
+    try {
+      const data = await api('/api/admin/voices');
+      setVoices(data);
+      return data;
+    } catch (error) {
+      window.alert(error.message);
+      return [];
+    } finally {
+      setVoicesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadTree();
+    void loadVoices();
+  }, []);
 
   useEffect(() => {
     if (!selectedModule) {
@@ -703,22 +813,33 @@ function AdminApp() {
         </div>
         <div className="admin-top-actions">
           <SaveStatus state={saveState} />
-          <button onClick={() => loadTree()} disabled={loading}><RefreshCw size={16} className={loading ? 'spin' : ''} /> Обновить данные</button>
+          <button onClick={() => adminSection === 'voices' ? loadVoices() : loadTree()} disabled={loading || voicesLoading}><RefreshCw size={16} className={(loading || voicesLoading) ? 'spin' : ''} /> Обновить данные</button>
           <a href="/">Открыть сайт</a>
         </div>
       </header>
 
-      <div className={`admin-workspace ${browserOpen ? 'with-browser' : 'focus-editor'}`}>
+      <div className={`admin-workspace ${adminSection === 'course' && browserOpen ? 'with-browser' : 'focus-editor'}`}>
         <aside className="admin-global-nav">
           <div className="admin-global-label">Разделы</div>
-          <button className="active"><BookOpen size={19} /><span><strong>Курс</strong><small>модули и уроки</small></span></button>
+          <button
+            className={adminSection === 'course' ? 'active' : ''}
+            onClick={() => { setAdminSection('course'); setBrowserOpen(true); }}
+          >
+            <BookOpen size={19} /><span><strong>Курс</strong><small>модули и уроки</small></span>
+          </button>
+          <button
+            className={adminSection === 'voices' ? 'active' : ''}
+            onClick={() => { setAdminSection('voices'); setBrowserOpen(false); }}
+          >
+            <Volume2 size={19} /><span><strong>Голоса</strong><small>6 демо-записей</small></span>
+          </button>
           <button disabled><Users size={19} /><span><strong>Пользователи</strong><small>скоро</small></span></button>
           <button disabled><Image size={19} /><span><strong>Медиатека</strong><small>скоро</small></span></button>
           <button disabled><BarChart3 size={19} /><span><strong>Аналитика</strong><small>скоро</small></span></button>
           <button disabled><Settings2 size={19} /><span><strong>Настройки</strong><small>скоро</small></span></button>
         </aside>
 
-        {browserOpen && (
+        {adminSection === 'course' && browserOpen && (
           <aside className="admin-browser">
             <div className="admin-browser-head">
               <div className="admin-browser-head-top">
@@ -738,7 +859,9 @@ function AdminApp() {
         )}
 
         <main className="admin-editor">
-          {loading ? (
+          {adminSection === 'voices' ? (
+            <VoiceAdminPanel voices={voices} setVoices={setVoices} loading={voicesLoading} onSaveState={setSaveState} />
+          ) : loading ? (
             <div className="admin-loading"><Loader2 className="spin" /> Загружаем курс…</div>
           ) : lessonDraft ? (
             <>
