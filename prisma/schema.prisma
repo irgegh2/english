@@ -16,6 +16,7 @@ model Profile {
   totalModules         Int      @default(35)
   currentModulePosition Int     @default(7)
   currentBlockPosition  Int     @default(1)
+  voicePreset           String  @default("ella")
   createdAt            DateTime @default(now())
   updatedAt        DateTime @updatedAt
 }
