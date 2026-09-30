@@ -12,7 +12,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "node prisma/seed.js",
-    "setup:mac": "bash scripts/setup-mac.sh"
+    "setup:mac": "bash scripts/setup-mac.sh",
+    "db:repair": "node prisma/seed.js --repair"
   },
   "dependencies": {
     "@prisma/client": "^6.16.2",
