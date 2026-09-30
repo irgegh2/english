@@ -470,10 +470,10 @@ function BlocksPage({ moduleData, blocks, loading, currentBlockPosition, isCurre
 let activeLessonAudio = null;
 
 const UI_SOUNDS = {
-  click: { url: '/assets/sounds/mclick.mp3', start: 0.025, end: 0.055, volume: 0.38 },
-  success: { url: '/assets/sounds/success.mp3', start: 0.025, end: 0.525, volume: 0.62 },
-  error: { url: '/assets/sounds/error.mp3', start: 0.025, end: 0.785, volume: 0.62 },
-  end: { url: '/assets/sounds/end.mp3', start: 0.025, end: 1.36, volume: 0.72 },
+  click: { url: '/assets/sounds/mclick.mp3', volume: 0.38 },
+  success: { url: '/assets/sounds/success.mp3', volume: 0.62 },
+  error: { url: '/assets/sounds/error.mp3', volume: 0.62 },
+  end: { url: '/assets/sounds/end.mp3', volume: 0.72 },
 };
 
 const uiSoundPools = {};
@@ -503,24 +503,12 @@ function playUiSound(name) {
   const audio = pool.find(item => item.paused || item.ended) || pool[0];
   if (!audio) return;
 
-  const start = () => {
-    try {
-      audio.pause();
-      audio.currentTime = config.start;
-      audio.volume = config.volume;
-      void audio.play();
-
-      window.setTimeout(() => {
-        if (!audio.paused && audio.currentTime >= config.end - 0.04) {
-          audio.pause();
-          audio.currentTime = config.start;
-        }
-      }, Math.max(20, (config.end - config.start) * 1000));
-    } catch {}
-  };
-
-  if (audio.readyState >= 1) start();
-  else audio.addEventListener('loadedmetadata', start, { once: true });
+  try {
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = config.volume;
+    void audio.play();
+  } catch {}
 }
 
 function preloadUiSounds() {
