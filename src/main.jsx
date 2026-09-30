@@ -692,6 +692,9 @@ function playTextAudio(screen, text, presetId) {
 }
 
 function getScreenAudioSequence(screen, presetId) {
+  const direct = screen?.audioFiles?.[presetId] || '';
+  if (direct) return [direct];
+
   const sequence = Array.isArray(screen?.resolvedAudioSequence)
     ? screen.resolvedAudioSequence
       .map(item => item?.audioFiles?.[presetId] || '')
@@ -699,7 +702,7 @@ function getScreenAudioSequence(screen, presetId) {
     : [];
   if (sequence.length) return sequence;
 
-  const single = getScreenAudio(screen, presetId);
+  const single = screen?.resolvedAudioFiles?.[presetId] || '';
   return single ? [single] : [];
 }
 
