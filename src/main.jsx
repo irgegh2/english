@@ -1296,6 +1296,7 @@ function SpecTaskScreen({
       <div className="lesson-task spec-task">
         <span className="lesson-eyebrow">{screen.eyebrow}</span>
         <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} large label="Послушать" />
         {renderLines(screen.lead || [])}
         <textarea
           className="spec-text-answer"
