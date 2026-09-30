@@ -1047,6 +1047,22 @@ function inferSpecOrder(screen) {
   return { tokens, answer };
 }
 
+function getSpecQuestionContext(screen) {
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  const context = [];
+
+  for (const line of lines) {
+    if (
+      line.startsWith('• ') ||
+      line.startsWith('→') ||
+      /^(варианты|ответ|правильн|неправильн|вопрос\s*\d*|задание\s*\d*)\b/i.test(line.replace(/:$/, ''))
+    ) break;
+    context.push(line);
+  }
+
+  return context;
+}
+
 function inferSpecExpectedText(screen) {
   const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -1203,7 +1219,9 @@ function SpecTaskScreen({
     (sourceMode === 'order' && !inferredOrder.tokens.length);
   const mode = questions.length && (['info', 'dialog', 'text'].includes(sourceMode) || lacksNativeStructure)
     ? 'choice'
-    : sourceMode;
+    : !questions.length && pairs.length && ['reading', 'listening'].includes(sourceMode)
+      ? 'shortAnswer'
+      : sourceMode;
   const displayLines = (mode === 'info' || mode === 'study' || mode === 'dialog' || mode === 'speaking' || mode === 'text')
     ? (screen.body || screen.lead || [])
     : (screen.lead || []);
@@ -1249,7 +1267,7 @@ function SpecTaskScreen({
             )}
           </>
         )}
-        {mode === 'reading' && renderLines(displayLines)}
+        {mode === 'reading' && renderLines(getSpecQuestionContext(screen))}
         {mode === 'choice' && screen.resolvedImageUrl && <SceneArt imageUrl={screen.resolvedImageUrl} compact />}
         <div className="lesson-multi-stack">
           {questions.map((item, index) => (
@@ -1333,6 +1351,36 @@ function SpecTaskScreen({
             {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (mode === 'shortAnswer') {
+    const context = getSpecQuestionContext(screen);
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        {sourceMode === 'listening' && (
+          <LessonAudioSequenceButton urls={audioUrls} large label="Послушать" />
+        )}
+        {context.length > 0 && renderLines(context)}
+        <div className="spec-short-answers">
+          {pairs.map((pair, index) => (
+            <label key={`${pair[0]}-${index}`}>
+              <span>{pair[0]}</span>
+              <input
+                value={answers[index] || ''}
+                onChange={event => setAnswer(index, event.target.value)}
+                disabled={locked}
+                placeholder="Ответ…"
+              />
+              {confirmation.status === 'correct' && <Check size={16} />}
+            </label>
+          ))}
+        </div>
+        {confirmation.status === 'correct' && <p className="lesson-feedback success"><Check size={15} /> Всё верно!</p>}
+        {confirmation.status === 'wrong' && <p className="lesson-feedback error">Проверь ответы и попробуй ещё раз.</p>}
       </div>
     );
   }
@@ -1508,12 +1556,15 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     (specSourceMode === 'order' && !specOrder.tokens.length);
   const specMode = specQuestions.length && (['info', 'dialog', 'text'].includes(specSourceMode) || specLacksNativeStructure)
     ? 'choice'
-    : specSourceMode;
+    : !specQuestions.length && specPairs.length && ['reading', 'listening'].includes(specSourceMode)
+      ? 'shortAnswer'
+      : specSourceMode;
   const specExpectedText = screen.type === 'specTask' && specMode === 'text' ? inferSpecExpectedText(screen) : '';
   const specCheckable = screen.type === 'specTask' && (
     (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length > 0) ||
     (['match', 'classify'].includes(specMode) && specPairs.length > 0) ||
     (specMode === 'order' && specOrder.tokens.length > 0 && specOrder.answer.length > 0) ||
+    (specMode === 'shortAnswer' && specPairs.length > 0) ||
     (specMode === 'text' && Boolean(specExpectedText))
   );
   const isCheckable = ['choice', 'listeningChoice', 'multiChoice', 'listeningDialog', 'classify', 'order'].includes(screen.type) || specCheckable;
@@ -1558,6 +1609,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       if (['choice', 'listening', 'reading'].includes(specMode) && specQuestions.length) return allMultiAnswered(specQuestions);
       if (['match', 'classify'].includes(specMode) && specPairs.length) return specPairs.every((_, index) => Boolean(answers[index]));
       if (specMode === 'order') return ordered.length === specOrder.answer.length;
+      if (specMode === 'shortAnswer') return specPairs.every((_, index) => Boolean(String(answers[index] || '').trim()));
       if (specMode === 'text' && specExpectedText) return Boolean(String(answers.text || '').trim());
     }
     return true;
@@ -1574,6 +1626,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         return specPairs.every((pair, index) => answers[index] === pair.slice(1).join(' → '));
       }
       if (specMode === 'order') return ordered.join(' | ') === specOrder.answer.join(' | ');
+      if (specMode === 'shortAnswer') {
+        return specPairs.every((pair, index) =>
+          normalizeAnswerText(answers[index]) === normalizeAnswerText(pair.slice(1).join(' → '))
+        );
+      }
       if (specMode === 'text' && specExpectedText) {
         return normalizeAnswerText(answers.text) === normalizeAnswerText(specExpectedText);
       }
