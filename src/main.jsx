@@ -894,6 +894,122 @@ function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false,
   );
 }
 
+
+const normalizeAnswerText = value => String(value || '')
+  .trim()
+  .replace(/^•\s*/, '')
+  .replace(/^["“”'‘’]+|["“”'‘’]+$/g, '')
+  .replace(/[.!?]+$/, '')
+  .toLocaleLowerCase('en-US');
+
+function inferSpecQuestions(screen) {
+  if (Array.isArray(screen?.questions) && screen.questions.length) return screen.questions;
+
+  const lines = Array.isArray(screen?.body) ? screen.body.map(line => String(line || '').trim()).filter(Boolean) : [];
+  const questions = [];
+  const isMeta = line => /^(варианты|ответ|правильн|неправильн|методическ|что закреп|что происходит|важно|зачем|следующ|результат|пример|картинка|аудио)\b/i.test(line);
+
+  for (let index = 0; index < lines.length;) {
+    if (!lines[index].startsWith('• ')) {
+      index += 1;
+      continue;
+    }
+
+    const options = [];
+    const runStart = index;
+    while (index < lines.length && lines[index].startsWith('• ')) {
+      const option = lines[index].replace(/^•\s*/, '').trim();
+      if (option) options.push(option);
+      index += 1;
+    }
+    if (options.length < 2) continue;
+
+    let markerIndex = -1;
+    let multiple = false;
+    for (let look = index; look < Math.min(lines.length, index + 10); look += 1) {
+      const value = lines[look].replace(/:$/, '').trim();
+      if (/^правильные$/i.test(value)) {
+        markerIndex = look;
+        multiple = true;
+        break;
+      }
+      if (/^(правильный ответ|правильная фраза|правильный вариант|ответ|неправильная фраза)$/i.test(value)) {
+        markerIndex = look;
+        break;
+      }
+      if (lines[look].startsWith('• ')) break;
+    }
+    if (markerIndex < 0) continue;
+
+    const expected = [];
+    for (let look = markerIndex + 1; look < Math.min(lines.length, markerIndex + 8); look += 1) {
+      const value = lines[look].replace(/^•\s*/, '').trim();
+      if (!value) continue;
+      if (isMeta(value) && expected.length) break;
+      const option = options.find(item => normalizeAnswerText(item) === normalizeAnswerText(value));
+      if (option) {
+        expected.push(option);
+        if (!multiple) break;
+        continue;
+      }
+      if (expected.length) break;
+    }
+    if (!expected.length) continue;
+
+    let prompt = '';
+    for (let look = runStart - 1; look >= Math.max(0, runStart - 12); look -= 1) {
+      const value = lines[look].trim();
+      if (!value || /^(варианты|выбери|пример\s*\d*|задание\s*\d*)\s*:?$/i.test(value)) continue;
+      if (isMeta(value)) continue;
+      prompt = value;
+      break;
+    }
+
+    questions.push({
+      prompt: prompt || screen.title || `Вопрос ${questions.length + 1}`,
+      options,
+      ...(expected.length > 1 ? { answers: expected } : { answer: expected[0] }),
+    });
+  }
+
+  return questions;
+}
+
+function MultiSelectOptions({ options, answers = [], selected = [], onSelect, confirmed = false, locked = false }) {
+  const selectedValues = Array.isArray(selected) ? selected : [];
+
+  return (
+    <div className="lesson-options spec-multiselect">
+      {options.map(option => {
+        const isSelected = selectedValues.includes(option);
+        const shouldBeSelected = answers.includes(option);
+        const isCorrect = confirmed && isSelected && shouldBeSelected;
+        const isWrong = confirmed && isSelected && !shouldBeSelected;
+        const isMissed = confirmed && !isSelected && shouldBeSelected;
+        const stateClass = isCorrect ? 'correct' : isWrong || isMissed ? 'wrong' : isSelected ? 'selected' : '';
+
+        return (
+          <button
+            key={option}
+            className={stateClass}
+            onClick={() => {
+              if (locked) return;
+              const next = isSelected
+                ? selectedValues.filter(value => value !== option)
+                : [...selectedValues, option];
+              onSelect(next);
+            }}
+            disabled={locked}
+          >
+            <span>{option}</span>
+            {isSelected && <Check size={18} />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SpecTaskScreen({
   screen,
   voicePreset,
@@ -908,7 +1024,7 @@ function SpecTaskScreen({
   confirmation,
 }) {
   const audioUrls = getScreenAudioSequence(screen, voicePreset);
-  const questions = screen.questions || [];
+  const questions = inferSpecQuestions(screen);
   const pairs = screen.pairs || [];
   const mode = screen.mode || 'info';
   const displayLines = (mode === 'info' || mode === 'study' || mode === 'dialog' || mode === 'speaking' || mode === 'text')
@@ -956,14 +1072,25 @@ function SpecTaskScreen({
           {questions.map((item, index) => (
             <div className="lesson-multi-item" key={index}>
               <strong>{item.prompt || `Вопрос ${index + 1}`}</strong>
-              <ChoiceOptions
-                options={item.options || []}
-                answer={item.answer}
-                selected={answers[index]}
-                onSelect={value => setAnswer(index, value)}
-                confirmed={confirmation.status !== 'idle'}
-                locked={locked}
-              />
+              {Array.isArray(item.answers) && item.answers.length > 1 ? (
+                <MultiSelectOptions
+                  options={item.options || []}
+                  answers={item.answers}
+                  selected={answers[index]}
+                  onSelect={value => setAnswer(index, value)}
+                  confirmed={confirmation.status !== 'idle'}
+                  locked={locked}
+                />
+              ) : (
+                <ChoiceOptions
+                  options={item.options || []}
+                  answer={item.answer}
+                  selected={answers[index]}
+                  onSelect={value => setAnswer(index, value)}
+                  confirmed={confirmation.status !== 'idle'}
+                  locked={locked}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -1157,7 +1284,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
 
   if (!screen) return null;
 
-  const specQuestions = screen.type === 'specTask' ? (screen.questions || []) : [];
+  const specQuestions = screen.type === 'specTask' ? inferSpecQuestions(screen) : [];
   const specPairs = screen.type === 'specTask' ? (screen.pairs || []) : [];
   const specMode = screen.type === 'specTask' ? (screen.mode || 'info') : '';
   const specCheckable = screen.type === 'specTask' && (
@@ -1181,8 +1308,22 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     setOrdered(updater);
   };
 
-  const allMultiAnswered = items => items.every((_, index) => answers[index] !== undefined && answers[index] !== null && answers[index] !== '');
-  const allMultiCorrect = items => items.every((item, index) => answers[index] === item.answer);
+  const allMultiAnswered = items => items.every((item, index) => {
+    const value = answers[index];
+    if (Array.isArray(item.answers) && item.answers.length > 1) {
+      return Array.isArray(value) && value.length === item.answers.length;
+    }
+    return value !== undefined && value !== null && value !== '';
+  });
+  const allMultiCorrect = items => items.every((item, index) => {
+    const value = answers[index];
+    if (Array.isArray(item.answers) && item.answers.length > 1) {
+      if (!Array.isArray(value) || value.length !== item.answers.length) return false;
+      const expected = new Set(item.answers);
+      return value.every(option => expected.has(option));
+    }
+    return value === item.answer;
+  });
 
   const selectionReady = (() => {
     if (screen.type === 'choice' || screen.type === 'listeningChoice') return Boolean(answers.single);
