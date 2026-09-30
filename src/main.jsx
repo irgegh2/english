@@ -1238,7 +1238,11 @@ function SpecTaskScreen({
   setSpoken,
   confirmation,
 }) {
-  const audioUrls = getScreenAudioSequence(screen, voicePreset);
+  const explicitAudioUrls = getScreenAudioSequence(screen, voicePreset);
+  const automaticPrimaryAudio = getTextAudio(screen, screen.focus || screen.phrase || '', voicePreset);
+  const audioUrls = explicitAudioUrls.length
+    ? explicitAudioUrls
+    : automaticPrimaryAudio ? [automaticPrimaryAudio] : [];
   const expectedAudioCount = Array.isArray(screen?.resolvedAudioSequence)
     ? screen.resolvedAudioSequence.length
     : Array.isArray(screen?.audioPhrases) ? screen.audioPhrases.length : (screen?.audioPhrase ? 1 : 0);
@@ -1869,7 +1873,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           ) : (
             <>
               <div className="lesson-question-word">{screen.prompt}</div>
-              {screenAudio && <LessonAudioButton url={screenAudio} />}
+              <LessonAudioButton url={screenAudio || getTextAudio(screen, screen.prompt, voicePreset)} />
             </>
           )}
           <ChoiceOptions
@@ -2010,16 +2014,27 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
           <p className="lesson-task-lead">{screen.note}</p>
           <LessonAudioButton url={screenAudio} large label="Послушать пример" />
           <div className="pronunciation-list">
-            {screen.phrases.map((phrase, index) => (
-              <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
-                <strong>{phrase}</strong>
-                <VoicePracticeRecorder
-                  compact
-                  done={Boolean(repeated[index])}
-                  onDone={() => setRepeated(prev => ({ ...prev, [index]: true }))}
-                />
-              </div>
-            ))}
+            {screen.phrases.map((phrase, index) => {
+              const phraseAudio = getTextAudio(screen, phrase, voicePreset);
+              return (
+                <div className={`pronunciation-row ${repeated[index] ? 'done' : ''}`} key={phrase}>
+                  <strong>{phrase}</strong>
+                  {phraseAudio && (
+                    <button
+                      className="lesson-inline-audio"
+                      data-ui-click="off"
+                      onClick={() => playLessonAudio(phraseAudio)}
+                      title="Послушать образец"
+                    ><Volume2 size={14} /></button>
+                  )}
+                  <VoicePracticeRecorder
+                    compact
+                    done={Boolean(repeated[index])}
+                    onDone={() => setRepeated(prev => ({ ...prev, [index]: true }))}
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       );
