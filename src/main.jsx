@@ -670,6 +670,18 @@ function getScreenAudio(screen, presetId) {
   return screen?.resolvedAudioFiles?.[presetId] || screen?.audioFiles?.[presetId] || '';
 }
 
+function getScreenAudioSequence(screen, presetId) {
+  const sequence = Array.isArray(screen?.resolvedAudioSequence)
+    ? screen.resolvedAudioSequence
+      .map(item => item?.audioFiles?.[presetId] || '')
+      .filter(Boolean)
+    : [];
+  if (sequence.length) return sequence;
+
+  const single = getScreenAudio(screen, presetId);
+  return single ? [single] : [];
+}
+
 function playLessonAudio(url) {
   if (!url || typeof window === 'undefined') return false;
 
@@ -698,6 +710,49 @@ function LessonAudioButton({ url, large = false, label = 'Послушать' })
     >
       <Volume2 size={large ? 28 : 20} />
       <span>{label}</span>
+    </button>
+  );
+}
+
+function playLessonAudioSequence(urls = []) {
+  const queue = urls.filter(Boolean);
+  if (!queue.length || typeof window === 'undefined') return false;
+
+  if (activeLessonAudio) {
+    activeLessonAudio.pause();
+    activeLessonAudio.currentTime = 0;
+    activeLessonAudio = null;
+  }
+
+  let index = 0;
+  const playNext = () => {
+    if (index >= queue.length) {
+      activeLessonAudio = null;
+      return;
+    }
+
+    const audio = new Audio(queue[index]);
+    index += 1;
+    activeLessonAudio = audio;
+    audio.addEventListener('ended', playNext, { once: true });
+    audio.addEventListener('error', playNext, { once: true });
+    audio.play().catch(playNext);
+  };
+
+  playNext();
+  return true;
+}
+
+function LessonAudioSequenceButton({ urls = [], large = false, label = 'Послушать' }) {
+  if (!urls.length) return null;
+  return (
+    <button
+      className={large ? 'lesson-listen-big' : 'lesson-audio-btn'}
+      onClick={() => playLessonAudioSequence(urls)}
+      title={label}
+    >
+      <Volume2 size={large ? 28 : 20} />
+      <span>{label}{urls.length > 1 ? ` · ${urls.length}` : ''}</span>
     </button>
   );
 }
@@ -782,7 +837,7 @@ function BlockPage({ moduleData, block, loading, onBackToModules, onBackToModule
               <h1>{block.title}</h1>
               <p>
                 {lessons.length
-                  ? `${lessons.length} уроков. Первый урок уже собран как интерактивный сценарий; остальные пока сохранены как структура.`
+                  ? `${lessons.length} уроков. Уроки 1–6 собраны как полноценные интерактивные сценарии первого блока.`
                   : 'Уроки и материалы этого блока пока не добавлены.'}
               </p>
               <button onClick={onBackToModule}><ChevronLeft size={16} /> Ко всем блокам модуля</button>
@@ -835,6 +890,184 @@ function ChoiceOptions({ options, answer, selected, onSelect, confirmed = false,
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function SpecTaskScreen({
+  screen,
+  voicePreset,
+  answers,
+  setAnswer,
+  ordered,
+  setOrder,
+  repeated,
+  setRepeated,
+  spoken,
+  setSpoken,
+  confirmation,
+}) {
+  const audioUrls = getScreenAudioSequence(screen, voicePreset);
+  const questions = screen.questions || [];
+  const pairs = screen.pairs || [];
+  const mode = screen.mode || 'info';
+  const displayLines = (mode === 'info' || mode === 'study' || mode === 'dialog' || mode === 'speaking' || mode === 'text')
+    ? (screen.body || screen.lead || [])
+    : (screen.lead || []);
+  const locked = confirmation.status === 'correct';
+
+  const renderLines = lines => (
+    <div className="spec-copy">
+      {(lines || []).slice(0, mode === 'info' ? 28 : 16).map((line, index) => (
+        <p key={index}>{line}</p>
+      ))}
+    </div>
+  );
+
+  if (mode === 'study') {
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.focus || screen.title}</h1>
+        {screen.title !== screen.focus && <h2 className="spec-subtitle">{screen.title}</h2>}
+        <LessonAudioSequenceButton urls={audioUrls} large label="Послушать" />
+        {renderLines(displayLines)}
+        {!audioUrls.length && screen.audioPhrases?.length > 0 && (
+          <div className="spec-audio-missing">Аудио для этого материала ещё не добавлено в аудиословарь.</div>
+        )}
+      </div>
+    );
+  }
+
+  if (['choice', 'listening', 'reading'].includes(mode) && questions.length) {
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        {mode === 'listening' && (
+          <>
+            <LessonAudioSequenceButton urls={audioUrls} large label={audioUrls.length > 1 ? 'Послушать последовательность' : 'Послушать'} />
+            {!audioUrls.length && screen.audioPhrases?.length > 0 && <div className="spec-audio-missing">Нужные записи пока не добавлены в аудиословарь.</div>}
+          </>
+        )}
+        {mode === 'reading' && renderLines(displayLines)}
+        {mode === 'choice' && screen.resolvedImageUrl && <SceneArt imageUrl={screen.resolvedImageUrl} compact />}
+        <div className="lesson-multi-stack">
+          {questions.map((item, index) => (
+            <div className="lesson-multi-item" key={index}>
+              <strong>{item.prompt || `Вопрос ${index + 1}`}</strong>
+              <ChoiceOptions
+                options={item.options || []}
+                answer={item.answer}
+                selected={answers[index]}
+                onSelect={value => setAnswer(index, value)}
+                confirmed={confirmation.status !== 'idle'}
+                locked={locked}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (['match', 'classify'].includes(mode) && pairs.length) {
+    const choices = [...new Set(pairs.map(pair => pair.slice(1).join(' → ')))];
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        {renderLines(screen.lead || [])}
+        <div className="spec-pairs">
+          {pairs.map((pair, index) => {
+            const correct = pair.slice(1).join(' → ');
+            const selected = answers[index] || '';
+            const state = confirmation.status === 'idle' ? '' : selected === correct ? 'correct' : 'wrong';
+            return (
+              <div className={`spec-pair-row ${state}`} key={`${pair[0]}-${index}`}>
+                <strong>{pair[0]}</strong>
+                <span>→</span>
+                <select value={selected} onChange={event => !locked && setAnswer(index, event.target.value)} disabled={locked}>
+                  <option value="">Выбери…</option>
+                  {choices.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'order' && screen.tokens?.length && screen.orderAnswer?.length) {
+    const remaining = screen.tokens.filter((token, index) => {
+      const selectedCount = ordered.filter(x => x === token).length;
+      const before = screen.tokens.slice(0, index + 1).filter(x => x === token).length;
+      return selectedCount < before;
+    });
+
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} label="Послушать" />
+        <div className={`sentence-builder ${confirmation.status === 'correct' ? 'confirmed-correct' : confirmation.status === 'wrong' ? 'confirmed-wrong' : ''}`}>
+          <div className="sentence-built">
+            {ordered.length
+              ? ordered.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => current.filter((_, i) => i !== index))}>{token}</button>)
+              : <span>Нажимай на элементы по порядку</span>}
+          </div>
+          <div className="sentence-tokens">
+            {remaining.map((token, index) => <button key={`${token}-${index}`} disabled={locked} onClick={() => setOrder(current => [...current, token])}>{token}</button>)}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'speaking') {
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        <LessonAudioSequenceButton urls={audioUrls} label="Послушать образец" />
+        {renderLines(screen.lead || [])}
+        <button className={`spec-speaking-button ${spoken[0] ? 'done' : ''}`} onClick={() => setSpoken(prev => ({ ...prev, 0: true }))}>
+          <Mic2 size={19} /> {spoken[0] ? 'Сказано' : 'Сказать вслух'} {spoken[0] && <Check size={16} />}
+        </button>
+        {spoken[0] && screen.expected?.length > 0 && (
+          <div className="spec-expected">
+            <span>Возможный вариант</span>
+            {screen.expected.map((item, index) => <strong key={index}>{item}</strong>)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (mode === 'text') {
+    return (
+      <div className="lesson-task spec-task">
+        <span className="lesson-eyebrow">{screen.eyebrow}</span>
+        <h1>{screen.title}</h1>
+        {renderLines(screen.lead || [])}
+        <textarea
+          className="spec-text-answer"
+          value={answers.text || ''}
+          onChange={event => setAnswer('text', event.target.value)}
+          placeholder="Напиши свой ответ…"
+          rows={4}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="lesson-task spec-task">
+      <span className="lesson-eyebrow">{screen.eyebrow}</span>
+      <h1>{screen.title}</h1>
+      <LessonAudioSequenceButton urls={audioUrls} label="Послушать" />
+      {renderLines(displayLines)}
     </div>
   );
 }
