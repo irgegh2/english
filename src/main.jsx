@@ -480,7 +480,8 @@ function playUiSound(name) {
 }
 
 function installGlobalClickSound() {
-  if (typeof document === 'undefined') return;
+  if (typeof document === 'undefined' || window.__skladnoClickSoundInstalled) return;
+  window.__skladnoClickSoundInstalled = true;
 
   document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
