@@ -1,13 +1,51 @@
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
+import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 const app = express();
 const port = Number(process.env.PORT || 8787);
 
+const uploadRoot = path.resolve(process.cwd(), 'public/uploads');
+fs.mkdirSync(path.join(uploadRoot, 'audio'), { recursive: true });
+fs.mkdirSync(path.join(uploadRoot, 'images'), { recursive: true });
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '8mb' }));
+app.use('/uploads', express.static(uploadRoot));
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination(req, _file, cb) {
+      const folder = req.params.kind === 'image' ? 'images' : 'audio';
+      const destination = path.join(uploadRoot, folder);
+      fs.mkdirSync(destination, { recursive: true });
+      cb(null, destination);
+    },
+    filename(_req, file, cb) {
+      const ext = path.extname(file.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '');
+      cb(null, `${Date.now()}-${crypto.randomUUID()}${ext || ''}`);
+    },
+  }),
+  limits: { fileSize: 30 * 1024 * 1024 },
+  fileFilter(req, file, cb) {
+    const kind = req.params.kind;
+    const valid = kind === 'audio'
+      ? file.mimetype.startsWith('audio/')
+      : kind === 'image'
+        ? file.mimetype.startsWith('image/')
+        : false;
+    cb(valid ? null : new Error('Unsupported media type'), valid);
+  },
+});
+
+const clampProgress = value => Math.max(0, Math.min(100, Number(value ?? 0)));
+const numberOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const asString = (value, fallback = '') => value == null ? fallback : String(value);
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -75,7 +113,6 @@ app.get('/api/course/modules', async (_req, res) => {
 
 app.get('/api/course/modules/:id/blocks', async (req, res) => {
   const id = Number(req.params.id);
-
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid module id' });
 
   try {
@@ -115,7 +152,6 @@ app.get('/api/course/modules/:id/blocks', async (req, res) => {
 
 app.get('/api/course/blocks/:id', async (req, res) => {
   const id = Number(req.params.id);
-
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid block id' });
 
   try {
@@ -128,7 +164,6 @@ app.get('/api/course/blocks/:id', async (req, res) => {
     });
 
     if (!block) return res.status(404).json({ error: 'Block not found' });
-
     res.json(block);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -137,7 +172,6 @@ app.get('/api/course/blocks/:id', async (req, res) => {
 
 app.get('/api/course/lessons/:id', async (req, res) => {
   const id = Number(req.params.id);
-
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid lesson id' });
 
   try {
@@ -177,7 +211,7 @@ app.patch('/api/profile/settings', async (req, res) => {
 
 app.patch('/api/lessons/:id/progress', async (req, res) => {
   const id = Number(req.params.id);
-  const progress = Math.max(0, Math.min(100, Number(req.body.progress ?? 0)));
+  const progress = clampProgress(req.body.progress);
 
   try {
     const lesson = await prisma.lesson.update({ where: { id }, data: { progress } });
@@ -185,6 +219,222 @@ app.patch('/api/lessons/:id/progress', async (req, res) => {
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
+});
+
+/* ===========================
+   Admin API
+   =========================== */
+
+app.get('/api/admin/tree', async (_req, res) => {
+  try {
+    const modules = await prisma.courseModule.findMany({
+      orderBy: { position: 'asc' },
+      include: {
+        blocks: {
+          orderBy: { position: 'asc' },
+          include: {
+            lessons: { orderBy: { position: 'asc' } },
+          },
+        },
+      },
+    });
+    res.json(modules);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/modules', async (req, res) => {
+  try {
+    const last = await prisma.courseModule.findFirst({ orderBy: { position: 'desc' } });
+    const position = numberOr(req.body.position, (last?.position || 0) + 1);
+    const title = asString(req.body.title, 'Новый модуль').trim() || 'Новый модуль';
+
+    const module = await prisma.courseModule.create({
+      data: {
+        position,
+        title,
+        shortTitle: asString(req.body.shortTitle, title),
+        description: asString(req.body.description, ''),
+        level: asString(req.body.level, 'A1'),
+        progress: clampProgress(req.body.progress),
+      },
+    });
+    res.status(201).json(module);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/modules/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const data = {};
+    if ('position' in req.body) data.position = numberOr(req.body.position, 1);
+    if ('title' in req.body) data.title = asString(req.body.title);
+    if ('shortTitle' in req.body) data.shortTitle = asString(req.body.shortTitle);
+    if ('description' in req.body) data.description = asString(req.body.description);
+    if ('level' in req.body) data.level = asString(req.body.level);
+    if ('progress' in req.body) data.progress = clampProgress(req.body.progress);
+    const module = await prisma.courseModule.update({ where: { id }, data });
+    res.json(module);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/modules/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    await prisma.courseModule.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/blocks', async (req, res) => {
+  const moduleId = Number(req.body.moduleId);
+  if (!Number.isInteger(moduleId)) return res.status(400).json({ error: 'moduleId is required' });
+
+  try {
+    const last = await prisma.courseBlock.findFirst({ where: { moduleId }, orderBy: { position: 'desc' } });
+    const block = await prisma.courseBlock.create({
+      data: {
+        moduleId,
+        position: numberOr(req.body.position, (last?.position || 0) + 1),
+        title: asString(req.body.title, 'Новый блок').trim() || 'Новый блок',
+        imageKey: asString(req.body.imageKey, 'lesson-1.webp'),
+        progress: clampProgress(req.body.progress),
+      },
+    });
+    res.status(201).json(block);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/blocks/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const data = {};
+    if ('position' in req.body) data.position = numberOr(req.body.position, 1);
+    if ('title' in req.body) data.title = asString(req.body.title);
+    if ('imageKey' in req.body) data.imageKey = asString(req.body.imageKey);
+    if ('progress' in req.body) data.progress = clampProgress(req.body.progress);
+    const block = await prisma.courseBlock.update({ where: { id }, data });
+    res.json(block);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/blocks/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    await prisma.courseBlock.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/lessons', async (req, res) => {
+  const blockId = Number(req.body.blockId);
+  if (!Number.isInteger(blockId)) return res.status(400).json({ error: 'blockId is required' });
+
+  try {
+    const block = await prisma.courseBlock.findUnique({ where: { id: blockId } });
+    if (!block) return res.status(404).json({ error: 'Block not found' });
+
+    const last = await prisma.lesson.findFirst({ where: { blockId }, orderBy: { position: 'desc' } });
+    const lesson = await prisma.lesson.create({
+      data: {
+        moduleId: block.moduleId,
+        blockId,
+        position: numberOr(req.body.position, (last?.position || 0) + 1),
+        title: asString(req.body.title, 'Новый урок').trim() || 'Новый урок',
+        tagPrimary: asString(req.body.tagPrimary, 'лексика'),
+        tagSecondary: asString(req.body.tagSecondary, 'практика'),
+        description: asString(req.body.description, ''),
+        objective: asString(req.body.objective, ''),
+        status: asString(req.body.status, 'ready'),
+        content: req.body.content ?? { version: 1, outcomes: [], screens: [] },
+        progress: clampProgress(req.body.progress),
+        duration: numberOr(req.body.duration, 0),
+        imageKey: asString(req.body.imageKey, 'lesson-1.webp'),
+      },
+    });
+    res.status(201).json(lesson);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.patch('/api/admin/lessons/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    const data = {};
+    const stringFields = ['title', 'tagPrimary', 'tagSecondary', 'description', 'objective', 'status', 'imageKey'];
+    for (const field of stringFields) {
+      if (field in req.body) data[field] = asString(req.body[field]);
+    }
+    if ('position' in req.body) data.position = numberOr(req.body.position, 1);
+    if ('progress' in req.body) data.progress = clampProgress(req.body.progress);
+    if ('duration' in req.body) data.duration = Math.max(0, numberOr(req.body.duration, 0));
+    if ('content' in req.body) data.content = req.body.content;
+
+    const lesson = await prisma.lesson.update({ where: { id }, data });
+    res.json(lesson);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.delete('/api/admin/lessons/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  try {
+    await prisma.lesson.delete({ where: { id } });
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+app.post('/api/admin/upload/:kind', (req, res, next) => {
+  if (!['audio', 'image'].includes(req.params.kind)) return res.status(400).json({ error: 'Invalid media kind' });
+  next();
+}, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'File is required' });
+  const folder = req.params.kind === 'image' ? 'images' : 'audio';
+  res.status(201).json({
+    url: `/uploads/${folder}/${req.file.filename}`,
+    filename: req.file.filename,
+    originalName: req.file.originalname,
+    mimeType: req.file.mimetype,
+    size: req.file.size,
+  });
+});
+
+app.delete('/api/admin/media', async (req, res) => {
+  const url = asString(req.body.url);
+  if (!url.startsWith('/uploads/')) return res.status(400).json({ error: 'Invalid media URL' });
+
+  const relative = url.replace(/^\/uploads\//, '');
+  const absolute = path.resolve(uploadRoot, relative);
+  if (!absolute.startsWith(uploadRoot)) return res.status(400).json({ error: 'Invalid media path' });
+
+  try {
+    await fs.promises.unlink(absolute);
+  } catch (error) {
+    if (error.code !== 'ENOENT') return res.status(400).json({ error: error.message });
+  }
+  res.json({ ok: true });
+});
+
+app.use((error, _req, res, _next) => {
+  console.error(error);
+  res.status(400).json({ error: error.message || 'Request failed' });
 });
 
 app.listen(port, () => {
