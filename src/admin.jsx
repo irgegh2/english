@@ -37,6 +37,71 @@ const normalizeLibraryText = value => String(value || '')
   .toLocaleLowerCase('en-US')
   .replace(/\s+/g, ' ');
 const normalizeAudioPhrase = normalizeLibraryText;
+
+const readAdminPreference = (key, fallback) => {
+  if (typeof window === 'undefined') return fallback;
+  try {
+    return window.localStorage.getItem(key) || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const saveAdminPreference = (key, value) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {}
+};
+
+const entryTimestamp = (entry, field = 'createdAt') => {
+  const value = new Date(entry?.[field] || 0).getTime();
+  return Number.isFinite(value) ? value : 0;
+};
+
+const matchesAddedPeriod = (entry, period) => {
+  if (period === 'all') return true;
+  const created = entryTimestamp(entry);
+  if (!created) return false;
+
+  const now = Date.now();
+  if (period === 'today') {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return created >= today.getTime();
+  }
+
+  const days = period === '7d' ? 7 : period === '30d' ? 30 : 0;
+  return days ? created >= now - days * 24 * 60 * 60 * 1000 : true;
+};
+
+const sortLibraryEntries = (items, sortMode, textField) => {
+  const list = [...items];
+  list.sort((a, b) => {
+    if (sortMode === 'oldest') return entryTimestamp(a) - entryTimestamp(b) || Number(a.id || 0) - Number(b.id || 0);
+    if (sortMode === 'updated') return entryTimestamp(b, 'updatedAt') - entryTimestamp(a, 'updatedAt') || Number(b.id || 0) - Number(a.id || 0);
+    if (sortMode === 'az') return String(a?.[textField] || '').localeCompare(String(b?.[textField] || ''), 'en', { sensitivity: 'base' });
+    if (sortMode === 'za') return String(b?.[textField] || '').localeCompare(String(a?.[textField] || ''), 'en', { sensitivity: 'base' });
+    return entryTimestamp(b) - entryTimestamp(a) || Number(b.id || 0) - Number(a.id || 0);
+  });
+  return list;
+};
+
+const formatLibraryDate = value => {
+  const date = new Date(value || 0);
+  if (!Number.isFinite(date.getTime()) || !value) return '';
+  return new Intl.DateTimeFormat('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(date);
+};
+
+const mediaFormat = entry => {
+  const mime = String(entry?.mimeType || '').toLowerCase();
+  const name = String(entry?.originalName || '').toLowerCase();
+  if (mime.includes('webp') || name.endsWith('.webp')) return 'webp';
+  if (mime.includes('png') || name.endsWith('.png')) return 'png';
+  if (mime.includes('jpeg') || mime.includes('jpg') || /\.jpe?g$/.test(name)) return 'jpeg';
+  if (mime.includes('gif') || name.endsWith('.gif')) return 'gif';
+  return 'other';
+};
 const normalizeAutoMediaKey = value => normalizeLibraryText(
   String(value || '').trim().replace(/[.!?…,:;]+$/u, '').trim()
 );
@@ -893,14 +958,33 @@ function SaveStatus({ state }) {
 function MediaLibraryPanel({ entries, setEntries, loading, onReload, onSaveState }) {
   const [newName, setNewName] = useState('');
   const [filter, setFilter] = useState('');
+  const [sortMode, setSortMode] = useState(() => readAdminPreference('admin-media-sort', 'newest'));
+  const [addedPeriod, setAddedPeriod] = useState(() => readAdminPreference('admin-media-period', 'all'));
+  const [formatFilter, setFormatFilter] = useState(() => readAdminPreference('admin-media-format', 'all'));
   const [uploading, setUploading] = useState(false);
   const renameTimers = useRef({});
 
+  useEffect(() => saveAdminPreference('admin-media-sort', sortMode), [sortMode]);
+  useEffect(() => saveAdminPreference('admin-media-period', addedPeriod), [addedPeriod]);
+  useEffect(() => saveAdminPreference('admin-media-format', formatFilter), [formatFilter]);
+
   const filteredEntries = useMemo(() => {
     const query = normalizeLibraryText(filter);
-    if (!query) return entries;
-    return entries.filter(entry => normalizeLibraryText(entry.name).includes(query));
-  }, [entries, filter]);
+    const visible = entries.filter(entry => {
+      if (query && !normalizeLibraryText(entry.name).includes(query)) return false;
+      if (!matchesAddedPeriod(entry, addedPeriod)) return false;
+      if (formatFilter !== 'all' && mediaFormat(entry) !== formatFilter) return false;
+      return true;
+    });
+    return sortLibraryEntries(visible, sortMode, 'name');
+  }, [entries, filter, addedPeriod, formatFilter, sortMode]);
+
+  const resetFilters = () => {
+    setFilter('');
+    setAddedPeriod('all');
+    setFormatFilter('all');
+    setSortMode('newest');
+  };
 
   const uploadImage = async file => {
     if (!file) return null;
@@ -932,7 +1016,7 @@ function MediaLibraryPanel({ entries, setEntries, loading, onReload, onSaveState
           size: uploaded.size,
         }),
       });
-      setEntries(list => [...list, created].sort((a, b) => a.name.localeCompare(b.name, 'en')));
+      setEntries(list => [created, ...list]);
       setNewName('');
       onSaveState('saved');
     } catch (error) {
@@ -1048,11 +1132,52 @@ function MediaLibraryPanel({ entries, setEntries, loading, onReload, onSaveState
         </div>
       </section>
 
-      <label className="admin-media-library-filter">
-        <Search size={17} />
-        <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Поиск по названию…" />
-        <span>{filteredEntries.length} из {entries.length}</span>
-      </label>
+      <div className="admin-library-toolbar">
+        <label className="admin-library-search">
+          <Search size={17} />
+          <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Поиск по названию…" />
+          <span>{filteredEntries.length} из {entries.length}</span>
+        </label>
+
+        <div className="admin-library-toolbar-controls">
+          <label>
+            <span>Добавлено</span>
+            <select value={addedPeriod} onChange={event => setAddedPeriod(event.target.value)}>
+              <option value="all">За всё время</option>
+              <option value="today">Сегодня</option>
+              <option value="7d">Последние 7 дней</option>
+              <option value="30d">Последние 30 дней</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Формат</span>
+            <select value={formatFilter} onChange={event => setFormatFilter(event.target.value)}>
+              <option value="all">Все форматы</option>
+              <option value="jpeg">JPEG</option>
+              <option value="png">PNG</option>
+              <option value="webp">WebP</option>
+              <option value="gif">GIF</option>
+              <option value="other">Другие</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Сортировка</span>
+            <select value={sortMode} onChange={event => setSortMode(event.target.value)}>
+              <option value="newest">Новые сверху</option>
+              <option value="oldest">Старые сверху</option>
+              <option value="updated">Недавно изменённые</option>
+              <option value="az">По алфавиту A → Z</option>
+              <option value="za">По алфавиту Z → A</option>
+            </select>
+          </label>
+
+          {(filter || addedPeriod !== 'all' || formatFilter !== 'all' || sortMode !== 'newest') && (
+            <button className="admin-library-reset" onClick={resetFilters}>Сбросить</button>
+          )}
+        </div>
+      </div>
 
       <div className="admin-media-library-grid">
         {filteredEntries.map(entry => (
@@ -1061,7 +1186,11 @@ function MediaLibraryPanel({ entries, setEntries, loading, onReload, onSaveState
             <div className="admin-media-library-card-body">
               <span>Название</span>
               <input value={entry.name} onChange={event => scheduleRename(entry.id, event.target.value)} />
-              <small>{entry.originalName || 'изображение'}{entry.size ? ` · ${Math.max(1, Math.round(entry.size / 1024))} КБ` : ''}</small>
+              <small>
+                {entry.originalName || 'изображение'}
+                {entry.size ? ` · ${Math.max(1, Math.round(entry.size / 1024))} КБ` : ''}
+                {entry.createdAt ? ` · добавлено ${formatLibraryDate(entry.createdAt)}` : ''}
+              </small>
               <div className="admin-media-actions">
                 <label className="admin-upload-btn">
                   <Upload size={14} /> Заменить файл
@@ -1087,13 +1216,37 @@ function MediaLibraryPanel({ entries, setEntries, loading, onReload, onSaveState
 function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveState }) {
   const [newPhrase, setNewPhrase] = useState('');
   const [filter, setFilter] = useState('');
+  const [sortMode, setSortMode] = useState(() => readAdminPreference('admin-audio-sort', 'newest'));
+  const [addedPeriod, setAddedPeriod] = useState(() => readAdminPreference('admin-audio-period', 'all'));
+  const [readinessFilter, setReadinessFilter] = useState(() => readAdminPreference('admin-audio-readiness', 'all'));
   const textTimers = useRef({});
+
+  useEffect(() => saveAdminPreference('admin-audio-sort', sortMode), [sortMode]);
+  useEffect(() => saveAdminPreference('admin-audio-period', addedPeriod), [addedPeriod]);
+  useEffect(() => saveAdminPreference('admin-audio-readiness', readinessFilter), [readinessFilter]);
 
   const filteredEntries = useMemo(() => {
     const query = normalizeAudioPhrase(filter);
-    if (!query) return entries;
-    return entries.filter(entry => normalizeAudioPhrase(entry.text).includes(query));
-  }, [entries, filter]);
+    const visible = entries.filter(entry => {
+      if (query && !normalizeAudioPhrase(entry.text).includes(query)) return false;
+      if (!matchesAddedPeriod(entry, addedPeriod)) return false;
+
+      const readyCount = VOICES.filter(([id]) => entry.audioFiles?.[id]).length;
+      if (readinessFilter === 'complete' && readyCount !== VOICES.length) return false;
+      if (readinessFilter === 'partial' && !(readyCount > 0 && readyCount < VOICES.length)) return false;
+      if (readinessFilter === 'missing' && readyCount !== 0) return false;
+      return true;
+    });
+
+    return sortLibraryEntries(visible, sortMode, 'text');
+  }, [entries, filter, addedPeriod, readinessFilter, sortMode]);
+
+  const resetFilters = () => {
+    setFilter('');
+    setAddedPeriod('all');
+    setReadinessFilter('all');
+    setSortMode('newest');
+  };
 
   const createEntry = async () => {
     const text = newPhrase.trim();
@@ -1105,7 +1258,7 @@ function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveSt
         method: 'POST',
         body: JSON.stringify({ text }),
       });
-      setEntries(list => [...list, created].sort((a, b) => a.text.localeCompare(b.text, 'en')));
+      setEntries(list => [created, ...list]);
       setNewPhrase('');
       onSaveState('saved');
     } catch (error) {
@@ -1216,9 +1369,49 @@ function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveSt
         </div>
       </section>
 
-      <div className="admin-audio-dict-toolbar">
-        <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Фильтр по фразам…" />
-        <span>{filteredEntries.length} из {entries.length}</span>
+      <div className="admin-library-toolbar admin-audio-dict-toolbar">
+        <label className="admin-library-search">
+          <Search size={17} />
+          <input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Поиск по слову или фразе…" />
+          <span>{filteredEntries.length} из {entries.length}</span>
+        </label>
+
+        <div className="admin-library-toolbar-controls">
+          <label>
+            <span>Озвучка</span>
+            <select value={readinessFilter} onChange={event => setReadinessFilter(event.target.value)}>
+              <option value="all">Все записи</option>
+              <option value="complete">Готово 6/6</option>
+              <option value="partial">Заполнено частично</option>
+              <option value="missing">Без аудио</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Добавлено</span>
+            <select value={addedPeriod} onChange={event => setAddedPeriod(event.target.value)}>
+              <option value="all">За всё время</option>
+              <option value="today">Сегодня</option>
+              <option value="7d">Последние 7 дней</option>
+              <option value="30d">Последние 30 дней</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Сортировка</span>
+            <select value={sortMode} onChange={event => setSortMode(event.target.value)}>
+              <option value="newest">Новые сверху</option>
+              <option value="oldest">Старые сверху</option>
+              <option value="updated">Недавно изменённые</option>
+              <option value="az">По алфавиту A → Z</option>
+              <option value="za">По алфавиту Z → A</option>
+            </select>
+          </label>
+
+          {(filter || addedPeriod !== 'all' || readinessFilter !== 'all' || sortMode !== 'newest') && (
+            <button className="admin-library-reset" onClick={resetFilters}>Сбросить</button>
+          )}
+        </div>
       </div>
 
       <div className="admin-audio-dict-list">
@@ -1228,7 +1421,10 @@ function AudioDictionaryPanel({ entries, setEntries, loading, onReload, onSaveSt
             <article className="admin-audio-dict-card" key={entry.id}>
               <div className="admin-audio-dict-card-head">
                 <div className="admin-audio-dict-phrase">
-                  <span>Фраза</span>
+                  <span>
+                    Фраза
+                    {entry.createdAt && <small> · добавлено {formatLibraryDate(entry.createdAt)}</small>}
+                  </span>
                   <input
                     value={entry.text}
                     onChange={event => scheduleTextSave(entry.id, event.target.value)}
