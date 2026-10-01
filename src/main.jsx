@@ -1636,8 +1636,11 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [sessionStats, setSessionStats] = useState({ correctChecks: 0, wrongAttempts: 0 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const lessonRunnerRef = useRef(null);
+  const finishScrollRef = useRef(null);
   const completionSoundPlayedRef = useRef(false);
   const autoPlayedScreenRef = useRef('');
+  const [finishCanScroll, setFinishCanScroll] = useState(false);
+  const [finishAtBottom, setFinishAtBottom] = useState(false);
 
   const screen = screens[step];
   const screenAudio = getScreenAudio(screen, voicePreset);
@@ -1725,6 +1728,39 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       document.removeEventListener('webkitfullscreenchange', syncFullscreen);
     };
   }, []);
+
+  useEffect(() => {
+    if (!finished) {
+      setFinishCanScroll(false);
+      setFinishAtBottom(false);
+      return undefined;
+    }
+
+    const element = finishScrollRef.current;
+    if (!element) return undefined;
+
+    const update = () => {
+      const canScroll = element.scrollHeight > element.clientHeight + 4;
+      const atBottom = !canScroll || element.scrollTop + element.clientHeight >= element.scrollHeight - 12;
+      setFinishCanScroll(canScroll);
+      setFinishAtBottom(atBottom);
+    };
+
+    element.scrollTop = 0;
+    update();
+    element.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    resizeObserver?.observe(element);
+    if (element.firstElementChild) resizeObserver?.observe(element.firstElementChild);
+
+    return () => {
+      element.removeEventListener('scroll', update);
+      window.removeEventListener('resize', update);
+      resizeObserver?.disconnect();
+    };
+  }, [finished, lesson?.id, sessionStats.correctChecks, sessionStats.wrongAttempts]);
 
   if (!screen) return null;
 
@@ -1919,27 +1955,37 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
         <div className="lesson-finish-burst" aria-hidden="true">
           {Array.from({ length: 12 }).map((_, index) => <i key={index} style={{ '--burst-index': index }} />)}
         </div>
-        <div className="lesson-finish-content">
-          <div className="lesson-finish-icon"><Check size={38} /></div>
-          <span className="lesson-eyebrow">Урок завершён</span>
-          <h1>{lesson.title} — готово</h1>
-          <p>{screen.finishText || 'Ты прошёл первый интерактивный урок.'}</p>
-          <div className="lesson-outcomes">
-            {(lesson.content?.outcomes || []).slice(0, 5).map((item, index) => (
-              <div key={item} style={{ '--outcome-index': index }}><Check size={15} />{item}</div>
-            ))}
-          </div>
-          {(sessionStats.correctChecks > 0 || sessionStats.wrongAttempts > 0) && (
-            <div className="lesson-session-stats">
-              <div><strong>{sessionStats.correctChecks}</strong><span>проверенных заданий</span></div>
-              <div><strong>{sessionStats.wrongAttempts}</strong><span>ошибочных попыток</span></div>
-              <div><strong>{sessionStats.wrongAttempts === 0 ? '✓' : '↻'}</strong><span>{sessionStats.wrongAttempts === 0 ? 'без ошибок' : 'ошибки отработаны'}</span></div>
+
+        <div className="lesson-finish-scroll" ref={finishScrollRef}>
+          <div className="lesson-finish-content">
+            <div className="lesson-finish-icon"><Check size={38} /></div>
+            <span className="lesson-eyebrow">Урок завершён</span>
+            <h1>{lesson.title} — готово</h1>
+            <p>{screen.finishText || 'Ты прошёл первый интерактивный урок.'}</p>
+            <div className="lesson-outcomes">
+              {(lesson.content?.outcomes || []).slice(0, 5).map((item, index) => (
+                <div key={item} style={{ '--outcome-index': index }}><Check size={15} />{item}</div>
+              ))}
             </div>
-          )}
-          <button className="lesson-primary-action lesson-finish-action" onClick={exitLesson}>
-            Вернуться к урокам <ArrowRight size={17} />
-          </button>
+            {(sessionStats.correctChecks > 0 || sessionStats.wrongAttempts > 0) && (
+              <div className="lesson-session-stats">
+                <div><strong>{sessionStats.correctChecks}</strong><span>проверенных заданий</span></div>
+                <div><strong>{sessionStats.wrongAttempts}</strong><span>ошибочных попыток</span></div>
+                <div><strong>{sessionStats.wrongAttempts === 0 ? '✓' : '↻'}</strong><span>{sessionStats.wrongAttempts === 0 ? 'без ошибок' : 'ошибки отработаны'}</span></div>
+              </div>
+            )}
+            <button className="lesson-primary-action lesson-finish-action" onClick={exitLesson}>
+              Вернуться к урокам <ArrowRight size={17} />
+            </button>
+          </div>
         </div>
+
+        {finishCanScroll && !finishAtBottom && (
+          <div className="lesson-finish-scroll-hint" aria-hidden="true">
+            <span>Прокрути вниз — там итог и кнопка завершения</span>
+            <ChevronDown size={17} />
+          </div>
+        )}
       </section>
     );
   }
