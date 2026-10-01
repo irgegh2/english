@@ -784,6 +784,37 @@ function getScreenAudioSequence(screen, presetId) {
   return single ? [single] : [];
 }
 
+function getAutomaticScreenAudioUrls(screen, presetId) {
+  if (!screen || screen.autoPlayAudio === false) return [];
+
+  if (screen.type === 'flashcard') {
+    const url = getScreenAudio(screen, presetId) || getTextAudio(screen, screen.phrase, presetId);
+    return url ? [url] : [];
+  }
+
+  if (screen.type === 'listeningChoice' || screen.type === 'listeningDialog') {
+    return getListeningAudioSequence(screen, presetId);
+  }
+
+  if (screen.type === 'specTask' && ['study', 'listening'].includes(screen.mode)) {
+    return getScreenAudioSequence(screen, presetId);
+  }
+
+  if (screen.autoPlayAudio === true) {
+    return getScreenAudioSequence(screen, presetId);
+  }
+
+  return [];
+}
+
+function playAutomaticScreenAudio(screen, presetId) {
+  const urls = getAutomaticScreenAudioUrls(screen, presetId);
+  if (!urls.length) return false;
+  return urls.length === 1
+    ? playLessonAudio(urls[0])
+    : playLessonAudioSequence(urls);
+}
+
 function playLessonAudio(url) {
   if (!url || typeof window === 'undefined') return false;
 
@@ -1606,6 +1637,7 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const lessonRunnerRef = useRef(null);
   const completionSoundPlayedRef = useRef(false);
+  const autoPlayedScreenRef = useRef('');
 
   const screen = screens[step];
   const screenAudio = getScreenAudio(screen, voicePreset);
@@ -1613,6 +1645,19 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
   useEffect(() => {
     preloadLessonMedia(lesson, voicePreset);
   }, [lesson?.id, lesson?.content, voicePreset]);
+
+  useEffect(() => {
+    const key = `${lesson?.id || 'lesson'}:${step}:${voicePreset}`;
+    if (autoPlayedScreenRef.current === key) return;
+
+    const timer = window.setTimeout(() => {
+      if (playAutomaticScreenAudio(screen, voicePreset)) {
+        autoPlayedScreenRef.current = key;
+      }
+    }, 80);
+
+    return () => window.clearTimeout(timer);
+  }, [lesson?.id, screen, step, voicePreset]);
 
   useEffect(() => {
     setAnswers({});
@@ -1808,6 +1853,15 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
     }
   };
 
+  const playTransitionAudio = targetStep => {
+    const targetScreen = screens[targetStep];
+    if (!targetScreen) return;
+    const key = `${lesson?.id || 'lesson'}:${targetStep}:${voicePreset}`;
+    if (playAutomaticScreenAudio(targetScreen, voicePreset)) {
+      autoPlayedScreenRef.current = key;
+    }
+  };
+
   const next = () => {
     const progress = Math.round(((step + 1) / screens.length) * 100);
     onProgress(progress);
@@ -1817,11 +1871,17 @@ function LessonRunner({ lesson, onProgress, onExit, voicePreset }) {
       setFinished(true);
       return;
     }
-    setStep(current => current + 1);
+
+    const targetStep = step + 1;
+    playTransitionAudio(targetStep);
+    setStep(targetStep);
   };
 
   const previous = () => {
-    if (step > 0) setStep(current => current - 1);
+    if (step <= 0) return;
+    const targetStep = step - 1;
+    playTransitionAudio(targetStep);
+    setStep(targetStep);
   };
 
   const toggleFullscreen = async () => {
